@@ -1,0 +1,11 @@
+python-binance==1.0.19
+pandas==2.0.0
+ipywidgets==8.0.6
+duckdb==0.8.1
+matplotlib==3.7.1
+numpy==1.24.3
+sqlalchemy==2.0.15
+pymysql==1.1.0
+cryptography==41.0.1
+google-cloud-storage==2.9.0
+google-cloud-sql==0.10.1
