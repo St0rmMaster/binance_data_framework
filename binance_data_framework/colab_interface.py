@@ -68,13 +68,13 @@ class DataDownloaderUI:
         """
         Создает виджеты для интерактивного интерфейса.
         """
-        # Виджет выбора символа (торговой пары)
-        self.symbol_dropdown = widgets.Dropdown(
+        # Виджет мультивыбора символов (торговых пар)
+        self.symbol_select = widgets.SelectMultiple(
             options=self.symbols,
-            value=self.symbols[0] if self.symbols else "BTCUSDT",
-            description='Торговая пара:',
+            value=[self.symbols[0]] if self.symbols else ["BTCUSDT"],
+            description='Торговые пары:',
             style={'description_width': 'initial'},
-            layout=widgets.Layout(width='50%')
+            layout=widgets.Layout(width='50%', height='120px')
         )
         
         # Виджет выбора таймфрейма
@@ -113,6 +113,14 @@ class DataDownloaderUI:
         self.use_cloud_checkbox = widgets.Checkbox(
             value=False,
             description='Использовать облако',
+            indent=False,
+            disabled=self.cloud_manager is None
+        )
+        
+        # Виджет для опции сохранения в облако
+        self.save_to_cloud_checkbox = widgets.Checkbox(
+            value=True,  # Включено по умолчанию
+            description='Сохранить в облако',
             indent=False,
             disabled=self.cloud_manager is None
         )
@@ -188,7 +196,7 @@ class DataDownloaderUI:
             clear_output()
             
             # Получаем выбранные значения из виджетов
-            symbol = self.symbol_dropdown.value
+            selected_symbols = list(self.symbol_select.value)
             timeframe = self.timeframe_dropdown.value
             
             start_date = datetime.combine(self.start_date_picker.value, datetime.min.time())
@@ -196,39 +204,55 @@ class DataDownloaderUI:
             
             use_local_only = self.use_local_only_checkbox.value
             use_cloud = self.use_cloud_checkbox.value
+            save_to_cloud = self.save_to_cloud_checkbox.value
             use_resample = self.use_resample_checkbox.value
             plot_data = self.plot_checkbox.value
+            
+            if not selected_symbols:
+                print("Ошибка: Необходимо выбрать хотя бы одну торговую пару")
+                return
             
             if end_date < start_date:
                 print("Ошибка: Дата окончания должна быть позже даты начала")
                 return
             
-            print(f"Запрос данных для {symbol} на таймфрейме {timeframe} с {start_date.date()} по {end_date.date()}")
+            print(f"Запрос данных для {', '.join(selected_symbols)} на таймфрейме {timeframe} с {start_date.date()} по {end_date.date()}")
             
-            # Получаем данные
-            if use_resample and timeframe != '1m':
-                # Если выбрано ресемплирование и таймфрейм не 1m
-                df = self._get_resampled_data(symbol, timeframe, start_date, end_date, use_local_only, use_cloud)
-            else:
-                # Стандартная логика получения данных
-                df = self._get_data(symbol, timeframe, start_date, end_date, use_local_only, use_cloud)
-            
-            if df is not None and not df.empty:
-                print(f"\nПолучено {len(df)} строк данных")
-                print("\nПервые 5 строк:")
-                display(df.head())
+            # Обрабатываем каждый выбранный символ
+            for symbol in selected_symbols:
+                print(f"\n--- Обработка {symbol} ---")
+                # Получаем данные
+                if use_resample and timeframe != '1m':
+                    # Если выбрано ресемплирование и таймфрейм не 1m
+                    df = self._get_resampled_data(symbol, timeframe, start_date, end_date, use_local_only, use_cloud)
+                else:
+                    # Стандартная логика получения данных
+                    df = self._get_data(symbol, timeframe, start_date, end_date, use_local_only, use_cloud)
                 
-                print("\nПоследние 5 строк:")
-                display(df.tail())
-                
-                print("\nИнформация о данных:")
-                df.info()
-                
-                # Отображаем график, если выбрана соответствующая опция
-                if plot_data:
-                    self._plot_data(df, symbol, timeframe)
-            else:
-                print("Данные не получены")
+                if df is not None and not df.empty:
+                    print(f"Получено {len(df)} строк данных для {symbol}")
+                    
+                    # Краткая информация о данных
+                    print("\nПервые 3 строки:")
+                    display(df.head(3))
+                    
+                    print("\nПоследние 3 строки:")
+                    display(df.tail(3))
+                    
+                    # Отображаем график, если выбрана соответствующая опция и обрабатывается не более 3 символов
+                    if plot_data and len(selected_symbols) <= 3:
+                        self._plot_data(df, symbol, timeframe)
+                    
+                    # Сохраняем в облако, если выбрана соответствующая опция
+                    if save_to_cloud and self.cloud_manager and not use_local_only:
+                        print(f"Сохранение данных {symbol} в облачную БД...")
+                        success = self.cloud_manager.save_data(df, symbol, timeframe)
+                        if success:
+                            print(f"Данные {symbol} успешно сохранены в облачную БД")
+                        else:
+                            print(f"Ошибка при сохранении данных {symbol} в облачную БД")
+                else:
+                    print(f"Данные для {symbol} не получены")
     
     def _get_data(
         self, 
@@ -287,11 +311,6 @@ class DataDownloaderUI:
             # Сохраняем полученные данные в локальную БД
             print("Сохранение данных в локальную БД...")
             self.db_manager.save_data(df, symbol, timeframe)
-            
-            # Если используется облако, сохраняем также в облачную БД
-            if use_cloud and self.cloud_manager:
-                print("Сохранение данных в облачную БД...")
-                self.cloud_manager.save_data(df, symbol, timeframe)
         
         return df
     
@@ -562,7 +581,7 @@ class DataDownloaderUI:
         Отображает интерактивный интерфейс в Jupyter/Colab.
         """
         # Создаем контейнеры для группировки виджетов
-        symbol_timeframe_container = widgets.HBox([self.symbol_dropdown, self.timeframe_dropdown])
+        symbol_timeframe_container = widgets.VBox([widgets.Label("Выберите торговые пары (можно несколько):"), self.symbol_select, self.timeframe_dropdown])
         date_container = widgets.HBox([self.start_date_picker, self.end_date_picker])
         
         options_container = widgets.HBox([
@@ -571,12 +590,11 @@ class DataDownloaderUI:
             self.plot_checkbox
         ])
         
+        cloud_options_container = None
         if self.cloud_manager:
-            options_container = widgets.HBox([
-                self.use_local_only_checkbox, 
+            cloud_options_container = widgets.HBox([
                 self.use_cloud_checkbox,
-                self.use_resample_checkbox, 
-                self.plot_checkbox
+                self.save_to_cloud_checkbox
             ])
         
         # Основные кнопки
@@ -596,10 +614,15 @@ class DataDownloaderUI:
             widgets.HTML("<h2>Загрузчик данных Binance US</h2>"),
             symbol_timeframe_container,
             date_container,
-            options_container,
-            buttons_container
+            options_container
         ]
         
+        if cloud_options_container:
+            main_components.append(widgets.HTML("<h3>Настройки облачного хранилища</h3>"))
+            main_components.append(cloud_options_container)
+        
+        main_components.append(buttons_container)
+            
         if cloud_buttons_container:
             main_components.append(widgets.HTML("<h3>Управление облачным хранилищем</h3>"))
             main_components.append(cloud_buttons_container)
