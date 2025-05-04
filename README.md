@@ -16,7 +16,7 @@
 ### В Google Colab
 
 ```python
-!pip install git+https://github.com/yourusername/binance_data_framework.git
+!pip install git+https://github.com/St0rmMaster/binance_data_framework.git
 ```
 
 Или клонировать репозиторий и установить в режиме разработки:
@@ -30,7 +30,7 @@
 ### Локальная установка
 
 ```bash
-pip install git+https://github.com/yourusername/binance_data_framework.git
+pip install git+https://github.com/St0rmMaster/binance_data_framework.git
 ```
 
 ## Использование
@@ -62,7 +62,7 @@ from google.colab import userdata
 api_key = userdata.get('BINANCE_US_API_KEY')
 api_secret = userdata.get('BINANCE_US_API_SECRET')
 
-api_client = BinanceUSClient(api_key=api_key, api_secret=api_secret)
+api_client = BinanceUSClient(api_key=api_key, api_secret=api_secret, tld='us')
 ```
 
 ### Программное получение данных (без UI)
