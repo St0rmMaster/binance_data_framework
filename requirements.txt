@@ -1,6 +1,6 @@
 python-binance
 pandas
-ipywidgets
+ipywidgets=7.7.0
 duckdb
 matplotlib
 numpy
