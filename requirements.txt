@@ -1,6 +1,0 @@
-python-binance
-pandas
-ipywidgets=7.7.1
-duckdb
-matplotlib
-numpy

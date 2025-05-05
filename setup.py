@@ -13,12 +13,7 @@ setup(
     url="https://github.com/St0rmMaster/binance_data_framework",
     packages=find_packages(),
     install_requires=[
-        "python-binance>=1.0.19",
-        "pandas>=2.0.0",
-        "ipywidgets>=8.0.6",
-        "duckdb>=0.8.1",
-        "matplotlib>=3.7.1",
-        "numpy>=1.24.3",
+        "python-binance",
     ],
     classifiers=[
         "Development Status :: 3 - Alpha",
