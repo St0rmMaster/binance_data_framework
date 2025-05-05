@@ -14,7 +14,6 @@ setup(
     packages=find_packages(),
     install_requires=[
         "python-binance",
-        "ipywidgets==7.7.1",
     ],
     classifiers=[
         "Development Status :: 3 - Alpha",
