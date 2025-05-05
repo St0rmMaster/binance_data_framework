@@ -5,12 +5,22 @@
 Модуль для подключения к Binance API и получения исторических данных.
 """
 
+import os
 import time
+import logging
 import pandas as pd
 from datetime import datetime
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from typing import Optional, Dict, Any, List, Tuple
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 class BinanceUSClient:
     """
@@ -24,10 +34,84 @@ class BinanceUSClient:
         Args:
             api_key: API ключ Binance US (опционально)
             api_secret: API секрет Binance US (опционально)
+            
+        Note:
+            Если api_key или api_secret не переданы, метод попытается загрузить их
+            из секретов Google Colab при условии, что код выполняется в среде Colab.
+            Для этого в Colab должны быть настроены секреты с именами 'binance_api_key'
+            и 'binance_api_secret'.
         """
-        self.api_key = api_key
-        self.api_secret = api_secret
+        # Инициализация значений ключей из аргументов
+        self._api_key = api_key
+        self._api_secret = api_secret
+        
+        # Попытка загрузить недостающие ключи из Google Colab, если используется эта среда
+        self._try_load_from_colab_secrets()
+        
+        logger.info(f"Инициализирован клиент Binance US API (ключ {'предоставлен' if self._api_key else 'не предоставлен'}, "
+                   f"секрет {'предоставлен' if self._api_secret else 'не предоставлен'})")
+        
         self.client = None
+    
+    def _try_load_from_colab_secrets(self):
+        """
+        Пытается загрузить API ключи из секретов Google Colab, если они не были предоставлены
+        и код выполняется в среде Colab.
+        """
+        # Проверка, выполняется ли код в среде Google Colab
+        is_colab = 'COLAB_GPU' in os.environ or 'google.colab' in str(get_ipython())
+        
+        if not is_colab:
+            logger.debug("Код не выполняется в среде Google Colab, пропуск загрузки секретов")
+            return
+        
+        # Если хотя бы один из ключей отсутствует, пытаемся загрузить из секретов Colab
+        if self._api_key is None or self._api_secret is None:
+            logger.info("Попытка загрузки недостающих ключей из секретов Google Colab")
+            
+            try:
+                # Импортируем модуль userdata из google.colab
+                from google.colab import userdata
+                
+                # Загрузка API ключа, если он не был предоставлен
+                if self._api_key is None:
+                    try:
+                        colab_api_key = userdata.get('binance_api_key')
+                        if colab_api_key:
+                            self._api_key = colab_api_key
+                            logger.info("API ключ успешно загружен из секретов Colab")
+                        else:
+                            logger.warning("Секрет 'binance_api_key' не найден в Colab")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при получении API ключа из секретов Colab: {e}")
+                
+                # Загрузка API секрета, если он не был предоставлен
+                if self._api_secret is None:
+                    try:
+                        colab_api_secret = userdata.get('binance_api_secret')
+                        if colab_api_secret:
+                            self._api_secret = colab_api_secret
+                            logger.info("API секрет успешно загружен из секретов Colab")
+                        else:
+                            logger.warning("Секрет 'binance_api_secret' не найден в Colab")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при получении API секрета из секретов Colab: {e}")
+                        
+            except ImportError:
+                logger.warning("Не удалось импортировать google.colab.userdata. "
+                             "Возможно, код выполняется в другой среде или требуется обновление Colab.")
+            except Exception as e:
+                logger.warning(f"Непредвиденная ошибка при загрузке секретов из Colab: {e}")
+    
+    @property
+    def api_key(self):
+        """Свойство для доступа к API ключу."""
+        return self._api_key
+    
+    @property
+    def api_secret(self):
+        """Свойство для доступа к API секрету."""
+        return self._api_secret
     
     def connect(self) -> bool:
         """
@@ -37,15 +121,15 @@ class BinanceUSClient:
             bool: True, если соединение успешно, иначе False
         """
         try:
-            self.client = Client(api_key=self.api_key, api_secret=self.api_secret, tld='us')
+            self.client = Client(api_key=self._api_key, api_secret=self._api_secret, tld='us')
             # Проверка соединения
             self.client.ping()
             return True
         except BinanceAPIException as e:
-            print(f"Ошибка подключения к Binance US API: {e}")
+            logger.error(f"Ошибка подключения к Binance US API: {e}")
             return False
         except Exception as e:
-            print(f"Непредвиденная ошибка при подключении: {e}")
+            logger.error(f"Непредвиденная ошибка при подключении: {e}")
             return False
     
     def get_client(self) -> Optional[Client]:
@@ -74,10 +158,10 @@ class BinanceUSClient:
             exchange_info = client.get_exchange_info()
             return exchange_info
         except BinanceAPIException as e:
-            print(f"Ошибка получения информации о бирже: {e}")
+            logger.error(f"Ошибка получения информации о бирже: {e}")
             return {}
         except Exception as e:
-            print(f"Непредвиденная ошибка: {e}")
+            logger.error(f"Непредвиденная ошибка: {e}")
             return {}
     
     def get_usdt_trading_pairs(self) -> List[str]:
@@ -98,7 +182,7 @@ class BinanceUSClient:
             ]
             return sorted(usdt_pairs)
         except Exception as e:
-            print(f"Ошибка при получении USDT пар: {e}")
+            logger.error(f"Ошибка при получении USDT пар: {e}")
             return []
     
     def get_available_intervals(self) -> List[str]:
@@ -150,7 +234,7 @@ class BinanceUSClient:
             start_str = int(start_date.timestamp() * 1000)
             end_str = int(end_date.timestamp() * 1000)
             
-            print(f"Загрузка данных для {symbol} на таймфрейме {interval} с {start_date} по {end_date}...")
+            logger.info(f"Загрузка данных для {symbol} на таймфрейме {interval} с {start_date} по {end_date}...")
             
             # Инициализация пустого списка для хранения всех свечей
             all_klines = []
@@ -188,18 +272,18 @@ class BinanceUSClient:
                     time.sleep(0.1)
                 except BinanceAPIException as e:
                     if 'Too much request weight used' in str(e):
-                        print(f"Превышен лимит запросов, ожидание 60 секунд...")
+                        logger.warning(f"Превышен лимит запросов, ожидание 60 секунд...")
                         time.sleep(60)
                         continue
                     else:
-                        print(f"Ошибка API Binance при загрузке данных: {e}")
+                        logger.error(f"Ошибка API Binance при загрузке данных: {e}")
                         break
                 except Exception as e:
-                    print(f"Непредвиденная ошибка при загрузке данных: {e}")
+                    logger.error(f"Непредвиденная ошибка при загрузке данных: {e}")
                     break
             
             if not all_klines:
-                print(f"Данные не найдены для {symbol} на таймфрейме {interval} в указанном периоде")
+                logger.info(f"Данные не найдены для {symbol} на таймфрейме {interval} в указанном периоде")
                 return pd.DataFrame()
             
             # Преобразование данных в pandas DataFrame
@@ -226,13 +310,13 @@ class BinanceUSClient:
             # Оставляем только нужные колонки: OHLCV
             df = df[['open', 'high', 'low', 'close', 'volume']]
             
-            print(f"Загружено {len(df)} свечей для {symbol} на таймфрейме {interval}")
+            logger.info(f"Загружено {len(df)} свечей для {symbol} на таймфрейме {interval}")
             
             return df
             
         except BinanceAPIException as e:
-            print(f"Ошибка API Binance: {e}")
+            logger.error(f"Ошибка API Binance: {e}")
             return pd.DataFrame()
         except Exception as e:
-            print(f"Непредвиденная ошибка: {e}")
-            return pd.DataFrame() 
+            logger.error(f"Непредвиденная ошибка: {e}")
+            return pd.DataFrame()
