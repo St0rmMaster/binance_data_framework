@@ -16,7 +16,7 @@
 ### В Google Colab
 
 ```python
-!pip install git+https://github.com/yourusername/binance_data_framework.git
+!pip install git+https://github.com/St0rmMaster/binance_data_framework.git
 ```
 
 Или клонировать репозиторий и установить в режиме разработки:
@@ -30,7 +30,7 @@
 ### Локальная установка
 
 ```bash
-pip install git+https://github.com/yourusername/binance_data_framework.git
+pip install git+https://github.com/St0rmMaster/binance_data_framework.git
 ```
 
 ## Использование
@@ -125,4 +125,4 @@ if not df.empty:
 
 ## Лицензия
 
-MIT License 
+MIT License

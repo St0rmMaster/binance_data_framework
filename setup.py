@@ -10,7 +10,7 @@ setup(
     description="Framework for downloading and storing Binance US data in Colab",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/binance_data_framework",
+    url="https://github.com/St0rmMaster/binance_data_framework",
     packages=find_packages(),
     install_requires=[
         "python-binance>=1.0.19",
@@ -32,4 +32,4 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.8",
-) 
+)
