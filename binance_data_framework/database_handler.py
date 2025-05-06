@@ -385,7 +385,7 @@ class LocalDataManager:
         except Exception as e:
             print(f"Непредвиденная ошибка при проверке наличия данных: {e}")
             return False, None
-    
+
     def get_data(
         self, 
         symbol: str, 
