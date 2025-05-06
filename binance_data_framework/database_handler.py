@@ -11,109 +11,74 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple, Union
 
-# Helper function to check if running in Colab
-def _is_running_in_colab():
-    try:
-        import google.colab
-        return True
-    except ImportError:
-        # Alternative check using environment variable
-        return 'COLAB_GPU' in os.environ
-    except Exception: # Catch other potential import errors or issues
-        return False
-
 class LocalDataManager:
     """
     Класс для управления локальной базой данных для хранения исторических данных.
+    Предназначен для работы исключительно в среде Google Colab с Google Drive.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self):
         """
         Инициализация менеджера локальной базы данных.
-        Автоматически определяет среду выполнения (Colab или локально)
-        и настраивает путь к базе данных. В Colab монтирует Google Drive, если необходимо.
-
-        Args:
-            db_path: Путь к файлу базы данных. Если None, используется путь по умолчанию.
-                     В Colab по умолчанию: '/content/drive/MyDrive/binance_data/binance_ohlcv_data.db'
-                     Локально по умолчанию: 'binance_data.db'
+        Автоматически проверяет среду выполнения и настраивает путь к базе данных на Google Drive.
+        В случае запуска вне Colab выбрасывает исключение.
         """
         self.conn = None
         self.cursor = None
-        self._is_colab = _is_running_in_colab()
-
-        if self._is_colab:
-            print("Обнаружена среда Google Colab.")
-            try:
-                # Импортируем необходимые модули только в Colab
-                import os
-                from google.colab import drive
-
-                drive_mount_point = '/content/drive'
-                if not os.path.ismount(drive_mount_point):
-                    print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
-                    try:
-                        drive.mount(drive_mount_point, force_remount=True) # force_remount может быть полезен
-                        print("Google Drive успешно смонтирован.")
-                    except Exception as e:
-                        # Генерируем исключение вместо простого print
-                        raise RuntimeError(f"Не удалось смонтировать Google Drive: {e}. Автоматическое использование БД на Google Drive невозможно.")
-                else:
-                    print("Google Drive уже смонтирован.")
-
-                # Определение пути к БД в Colab
-                default_colab_db_path = os.path.join(drive_mount_point, 'MyDrive', 'binance_data', 'binance_ohlcv_data.db')
-
-                if db_path is None:
-                    self.db_path = default_colab_db_path
-                    print(f"Путь к БД не указан, используется путь по умолчанию в Google Drive: {self.db_path}")
-                else:
-                    # Добавляем проверку пользовательского пути
-                    if not db_path.startswith(drive_mount_point):
-                        print(f"ПРЕДУПРЕЖДЕНИЕ: Указанный путь '{db_path}' не начинается с '{drive_mount_point}'. Убедитесь, что база данных будет доступна по этому пути в среде Colab.")
-                    self.db_path = db_path
-                    print(f"Используется указанный путь к БД: {self.db_path}")
-
-            except ImportError:
-                print("Ошибка: Не удалось импортировать 'google.colab'. Работаем как в локальной среде.")
-                # Если импорт не удался (маловероятно в Colab, но возможно), откатываемся к локальной логике
-                self._is_colab = False # Считаем, что это не Colab
-                self.db_path = db_path if db_path is not None else 'binance_data.db'
-                print(f"Используется путь к БД: {self.db_path}")
-            except Exception as e:
-                 print(f"Непредвиденная ошибка при настройке для Colab: {e}")
-                 # Откатываемся к локальной логике в случае других ошибок
-                 self._is_colab = False
-                 self.db_path = db_path if db_path is not None else 'binance_data.db'
-                 print(f"Используется путь к БД: {self.db_path}")
-
-        else:
-            # Логика для локальной среды
-            print("Среда Google Colab не обнаружена. Работаем в локальном режиме.")
-            self.db_path = db_path if db_path is not None else 'binance_data.db'
-            print(f"Используется путь к БД: {self.db_path}")
-
-        # Создаем директорию для файла БД, если она не существует
+        
         try:
-            db_dir = os.path.dirname(self.db_path)
-            # Проверяем, что директория не пустая (например, если db_path = 'my_db.db')
-            if db_dir:
-                 os.makedirs(db_dir, exist_ok=True)
-                 print(f"Директория '{db_dir}' проверена/создана.")
-        except OSError as e:
-            print(f"Ошибка при создании директории для БД '{os.path.dirname(self.db_path)}': {e}")
-            # Возможно, стоит выбросить исключение, если директорию создать не удалось
-            raise RuntimeError(f"Не удалось создать директорию для БД: {e}") from e
+            # Проверяем, запущен ли код в Colab
+            from IPython import get_ipython
+            is_colab = 'google.colab' in str(get_ipython())
+        except:
+            is_colab = False
+            
+        if not is_colab:
+            raise RuntimeError("Ошибка: Фреймворк binance_data_framework предназначен для использования только в среде Google Colab.")
+            
+        # Если мы здесь, значит код выполняется в Colab
+        print("Обнаружена среда Google Colab.")
+        try:
+            # Импортируем необходимые модули для работы с Google Drive
+            import os
+            from google.colab import drive
+
+            drive_mount_point = '/content/drive'
+            if not os.path.ismount(drive_mount_point):
+                print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
+                try:
+                    drive.mount(drive_mount_point, force_remount=True)
+                    print("Google Drive успешно смонтирован.")
+                except Exception as e:
+                    raise RuntimeError(f"Не удалось смонтировать Google Drive: {e}. Автоматическое использование БД на Google Drive невозможно.")
+            else:
+                print("Google Drive уже смонтирован.")
+
+            # Фиксированный путь к базе данных
+            db_directory = '/content/drive/MyDrive/database'
+            fixed_db_path = os.path.join(db_directory, 'binance_ohlcv_data.db')
+            
+            # Создаем директорию для БД, если она не существует
+            try:
+                os.makedirs(db_directory, exist_ok=True)
+                print(f"Директория '{db_directory}' проверена/создана.")
+            except OSError as e:
+                raise RuntimeError(f"Не удалось создать директорию для БД: {e}")
+                
+            # Устанавливаем путь к БД
+            self.db_path = fixed_db_path
+            print(f"Путь к БД: {self.db_path}")
+
+        except ImportError as e:
+            raise RuntimeError(f"Ошибка: Не удалось импортировать необходимые модули для работы с Google Colab: {e}") 
         except Exception as e:
-            print(f"Непредвиденная ошибка при создании директории для БД: {e}")
-            raise RuntimeError(f"Непредвиденная ошибка при создании директории для БД: {e}") from e
+            raise RuntimeError(f"Непредвиденная ошибка при настройке для Colab: {e}")
 
-
-        # Подключаемся к БД и инициализируем таблицы ПОСЛЕ определения пути и создания директории
+        # Подключаемся к БД и инициализируем таблицы
         if self._connect():
             self.initialize_db()
         else:
-            # Если подключение не удалось, возможно, стоит выбросить исключение
+            # Если подключение не удалось, бросаем исключение
             raise ConnectionError(f"Не удалось подключиться к базе данных по пути: {self.db_path}")
 
     def _connect(self) -> bool:
@@ -351,9 +316,14 @@ class LocalDataManager:
             if not self.conn:
                 self._connect()
             
+            # Диагностическое логирование
+            print(f"[DEBUG check_data_exists] Checking: symbol={symbol}, timeframe={timeframe}")
+            print(f"[DEBUG check_data_exists] Requested start: {start_date}, end: {end_date}")
+            
             # Преобразуем даты в миллисекунды
             start_ms = self._timestamp_to_ms(start_date)
             end_ms = self._timestamp_to_ms(end_date)
+            print(f"[DEBUG check_data_exists] Requested start_ms: {start_ms}, end_ms: {end_ms}")
             
             # Сначала проверяем метаданные для быстрого ответа
             self.cursor.execute(
@@ -363,13 +333,18 @@ class LocalDataManager:
             result = self.cursor.fetchone()
             
             if not result:
+                print(f"[DEBUG check_data_exists] No metadata found.")
                 # Нет метаданных, значит нет данных
                 return False, None
             
             meta_start, meta_end = result
+            print(f"[DEBUG check_data_exists] Found metadata: meta_start_ms={meta_start}, meta_end_ms={meta_end}")
             
             # Проверяем, покрывают ли имеющиеся данные запрошенный период
-            if meta_start <= start_ms and meta_end >= end_ms:
+            covers_full_period = (meta_start <= start_ms and meta_end >= end_ms)
+            print(f"[DEBUG check_data_exists] Metadata check covers_full_period: {covers_full_period}")
+            
+            if covers_full_period:
                 # Данные полностью покрывают запрошенный период
                 return True, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
             
@@ -385,17 +360,23 @@ class LocalDataManager:
             result = self.cursor.fetchone()
             
             if not result or result[0] is None or result[1] is None:
+                print(f"[DEBUG check_data_exists] No actual data found in requested period.")
                 # Нет данных для указанного периода
                 return False, None
             
             actual_start, actual_end = result
+            print(f"[DEBUG check_data_exists] Found actual data: actual_start_ms={actual_start}, actual_end_ms={actual_end}")
             
             # Проверяем, покрывают ли фактические данные весь запрошенный период
-            if actual_start <= start_ms and actual_end >= end_ms:
+            covers_actual_period = (actual_start <= start_ms and actual_end >= end_ms)
+            print(f"[DEBUG check_data_exists] Actual data check covers_full_period: {covers_actual_period}")
+            
+            if covers_actual_period:
                 # Данные полностью покрывают запрошенный период
                 return True, (self._ms_to_datetime(actual_start), self._ms_to_datetime(actual_end))
             
             # Данные частично покрывают период
+            print(f"[DEBUG check_data_exists] Data partially covers the requested period.")
             return False, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
             
         except sqlite3.Error as e:

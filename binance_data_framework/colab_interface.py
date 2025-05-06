@@ -207,8 +207,15 @@ class DataDownloaderUI:
         Returns:
             pd.DataFrame: DataFrame с данными или None в случае ошибки
         """
+        # Диагностические сообщения перед проверкой наличия данных
+        print(f"[DEBUG _get_data] Calling check_data_exists for: symbol={symbol}, timeframe={timeframe}")
+        print(f"[DEBUG _get_data] Start date: {start_date}, End date: {end_date}")
+        
         # Проверяем наличие данных в локальной БД
         data_exists, date_range = self.db_manager.check_data_exists(symbol, timeframe, start_date, end_date)
+        
+        # Диагностические сообщения после проверки
+        print(f"[DEBUG _get_data] Result from check_data_exists: data_exists={data_exists}, date_range={date_range}")
         
         if data_exists:
             print(f"Данные найдены в локальной БД для {symbol} на таймфрейме {timeframe} в указанном периоде")
@@ -416,4 +423,4 @@ class DataDownloaderUI:
         ])
         
         # Отображаем главный контейнер
-        display(main_container) 
+        display(main_container)
