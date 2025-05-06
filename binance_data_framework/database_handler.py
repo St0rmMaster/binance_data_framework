@@ -317,13 +317,13 @@ class LocalDataManager:
                 self._connect()
             
             # Диагностическое логирование
-            print(f"[DEBUG check_data_exists] Checking: symbol={symbol}, timeframe={timeframe}")
-            print(f"[DEBUG check_data_exists] Requested start: {start_date}, end: {end_date}")
+            print(f"\n[DEBUG check_data_exists] Проверка: symbol={symbol}, timeframe={timeframe}")
+            print(f"[DEBUG check_data_exists] Запрошенный период: start={start_date}, end={end_date}")
             
             # Преобразуем даты в миллисекунды
             start_ms = self._timestamp_to_ms(start_date)
             end_ms = self._timestamp_to_ms(end_date)
-            print(f"[DEBUG check_data_exists] Requested start_ms: {start_ms}, end_ms: {end_ms}")
+            print(f"[DEBUG check_data_exists] Запрошенный период (ms): start_ms={start_ms}, end_ms={end_ms}")
             
             # Сначала проверяем метаданные для быстрого ответа
             self.cursor.execute(
@@ -333,20 +333,24 @@ class LocalDataManager:
             result = self.cursor.fetchone()
             
             if not result:
-                print(f"[DEBUG check_data_exists] No metadata found.")
+                print(f"[DEBUG check_data_exists] Метаданные для {symbol}/{timeframe} не найдены.")
+                print("[DEBUG check_data_exists] Возврат: False (нет метаданных)")
                 # Нет метаданных, значит нет данных
                 return False, None
             
             meta_start, meta_end = result
-            print(f"[DEBUG check_data_exists] Found metadata: meta_start_ms={meta_start}, meta_end_ms={meta_end}")
+            print(f"[DEBUG check_data_exists] Найдены метаданные (ms): meta_start={meta_start}, meta_end={meta_end}")
             
             # Проверяем, покрывают ли имеющиеся данные запрошенный период
-            covers_full_period = (meta_start <= start_ms and meta_end >= end_ms)
-            print(f"[DEBUG check_data_exists] Metadata check covers_full_period: {covers_full_period}")
+            covers_full_period_meta = (meta_start <= start_ms and meta_end >= end_ms)
+            print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period): {covers_full_period_meta}")
             
-            if covers_full_period:
+            if covers_full_period_meta:
+                print("[DEBUG check_data_exists] Возврат: True (по метаданным)")
                 # Данные полностью покрывают запрошенный период
                 return True, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
+            else:
+                print("[DEBUG check_data_exists] Период НЕ покрыт по метаданным.")
             
             # Проверяем фактическое наличие данных в базе
             self.cursor.execute(
@@ -360,23 +364,26 @@ class LocalDataManager:
             result = self.cursor.fetchone()
             
             if not result or result[0] is None or result[1] is None:
-                print(f"[DEBUG check_data_exists] No actual data found in requested period.")
+                print(f"[DEBUG check_data_exists] Фактические данные для запрошенного периода не найдены.")
+                print("[DEBUG check_data_exists] Возврат: False (нет фактических данных)")
                 # Нет данных для указанного периода
                 return False, None
             
             actual_start, actual_end = result
-            print(f"[DEBUG check_data_exists] Found actual data: actual_start_ms={actual_start}, actual_end_ms={actual_end}")
+            print(f"[DEBUG check_data_exists] Найдены фактические данные (ms): actual_start={actual_start}, actual_end={actual_end}")
             
             # Проверяем, покрывают ли фактические данные весь запрошенный период
-            covers_actual_period = (actual_start <= start_ms and actual_end >= end_ms)
-            print(f"[DEBUG check_data_exists] Actual data check covers_full_period: {covers_actual_period}")
+            covers_full_period_actual = (actual_start <= start_ms and actual_end >= end_ms)
+            print(f"[DEBUG check_data_exists] Покрытие по факт. данным (covers_full_period): {covers_full_period_actual}")
             
-            if covers_actual_period:
+            if covers_full_period_actual:
                 # Данные полностью покрывают запрошенный период
+                print(f"[DEBUG check_data_exists] Возврат: True (по факт. данным)")
                 return True, (self._ms_to_datetime(actual_start), self._ms_to_datetime(actual_end))
             
             # Данные частично покрывают период
-            print(f"[DEBUG check_data_exists] Data partially covers the requested period.")
+            print(f"[DEBUG check_data_exists] Данные лишь частично покрывают запрошенный период.")
+            print(f"[DEBUG check_data_exists] Возврат: False (частичное покрытие)")
             return False, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
             
         except sqlite3.Error as e:
