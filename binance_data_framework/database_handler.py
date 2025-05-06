@@ -11,44 +11,142 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple, Union
 
+# Helper function to check if running in Colab
+def _is_running_in_colab():
+    try:
+        import google.colab
+        return True
+    except ImportError:
+        # Alternative check using environment variable
+        return 'COLAB_GPU' in os.environ
+    except Exception: # Catch other potential import errors or issues
+        return False
+
 class LocalDataManager:
     """
     Класс для управления локальной базой данных для хранения исторических данных.
     """
-    
-    def __init__(self, db_path: str = 'binance_data.db'):
+
+    def __init__(self, db_path: Optional[str] = None):
         """
         Инициализация менеджера локальной базы данных.
-        
+        Автоматически определяет среду выполнения (Colab или локально)
+        и настраивает путь к базе данных. В Colab монтирует Google Drive, если необходимо.
+
         Args:
-            db_path: Путь к файлу базы данных
+            db_path: Путь к файлу базы данных. Если None, используется путь по умолчанию.
+                     В Colab по умолчанию: '/content/drive/MyDrive/binance_data/binance_ohlcv_data.db'
+                     Локально по умолчанию: 'binance_data.db'
         """
-        self.db_path = db_path
         self.conn = None
         self.cursor = None
-        
-        # Создаем базу данных и таблицы при инициализации
-        self._connect()
-        self.initialize_db()
-    
+        self._is_colab = _is_running_in_colab()
+
+        if self._is_colab:
+            print("Обнаружена среда Google Colab.")
+            try:
+                # Импортируем необходимые модули только в Colab
+                import os
+                from google.colab import drive
+
+                drive_mount_point = '/content/drive'
+                if not os.path.ismount(drive_mount_point):
+                    print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
+                    try:
+                        drive.mount(drive_mount_point, force_remount=True) # force_remount может быть полезен
+                        print("Google Drive успешно смонтирован.")
+                    except Exception as e:
+                        print(f"Ошибка монтирования Google Drive: {e}")
+                        # Решаем, что делать дальше: можно выбросить исключение или работать без Drive
+                        # В данном случае, мы продолжим, но путь по умолчанию не будет работать
+                        # и пользовательский путь вне Drive вызовет предупреждение.
+                        # Можно добавить raise RuntimeError("Не удалось смонтировать Google Drive.") если это критично
+                else:
+                    print("Google Drive уже смонтирован.")
+
+                # Определение пути к БД в Colab
+                default_colab_db_path = os.path.join(drive_mount_point, 'MyDrive', 'binance_data', 'binance_ohlcv_data.db')
+
+                if db_path is None:
+                    self.db_path = default_colab_db_path
+                    print(f"Путь к БД не указан, используется путь по умолчанию в Google Drive: {self.db_path}")
+                else:
+                    if not db_path.startswith(drive_mount_point):
+                        print(f"Предупреждение: Указанный путь '{db_path}' не находится в {drive_mount_point}. "
+                              "Убедитесь, что путь доступен для записи.")
+                    self.db_path = db_path
+                    print(f"Используется указанный путь к БД: {self.db_path}")
+
+            except ImportError:
+                print("Ошибка: Не удалось импортировать 'google.colab'. Работаем как в локальной среде.")
+                # Если импорт не удался (маловероятно в Colab, но возможно), откатываемся к локальной логике
+                self._is_colab = False # Считаем, что это не Colab
+                self.db_path = db_path if db_path is not None else 'binance_data.db'
+                print(f"Используется путь к БД: {self.db_path}")
+            except Exception as e:
+                 print(f"Непредвиденная ошибка при настройке для Colab: {e}")
+                 # Откатываемся к локальной логике в случае других ошибок
+                 self._is_colab = False
+                 self.db_path = db_path if db_path is not None else 'binance_data.db'
+                 print(f"Используется путь к БД: {self.db_path}")
+
+        else:
+            # Логика для локальной среды
+            print("Среда Google Colab не обнаружена. Работаем в локальном режиме.")
+            self.db_path = db_path if db_path is not None else 'binance_data.db'
+            print(f"Используется путь к БД: {self.db_path}")
+
+        # Создаем директорию для файла БД, если она не существует
+        try:
+            db_dir = os.path.dirname(self.db_path)
+            # Проверяем, что директория не пустая (например, если db_path = 'my_db.db')
+            if db_dir:
+                 os.makedirs(db_dir, exist_ok=True)
+                 print(f"Директория '{db_dir}' проверена/создана.")
+        except OSError as e:
+            print(f"Ошибка при создании директории для БД '{os.path.dirname(self.db_path)}': {e}")
+            # Возможно, стоит выбросить исключение, если директорию создать не удалось
+            raise RuntimeError(f"Не удалось создать директорию для БД: {e}") from e
+        except Exception as e:
+            print(f"Непредвиденная ошибка при создании директории для БД: {e}")
+            raise RuntimeError(f"Непредвиденная ошибка при создании директории для БД: {e}") from e
+
+
+        # Подключаемся к БД и инициализируем таблицы ПОСЛЕ определения пути и создания директории
+        if self._connect():
+            self.initialize_db()
+        else:
+            # Если подключение не удалось, возможно, стоит выбросить исключение
+            raise ConnectionError(f"Не удалось подключиться к базе данных по пути: {self.db_path}")
+
     def _connect(self) -> bool:
         """
-        Устанавливает соединение с базой данных.
-        
+        Устанавливает соединение с базой данных. Использует self.db_path.
+
         Returns:
             bool: True, если соединение успешно, иначе False
         """
         try:
+            # Убедимся, что путь к БД установлен
+            if not hasattr(self, 'db_path') or not self.db_path:
+                 print("Ошибка: Путь к базе данных не определен перед подключением.")
+                 return False
+            print(f"Попытка подключения к БД: {self.db_path}")
             self.conn = sqlite3.connect(self.db_path)
             self.cursor = self.conn.cursor()
+            print("Соединение с БД установлено успешно.")
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
+            print(f"Ошибка подключения к базе данных SQLite: {e}")
+            self.conn = None # Сбрасываем соединение в случае ошибки
+            self.cursor = None
             return False
         except Exception as e:
             print(f"Непредвиденная ошибка при подключении к базе данных: {e}")
+            self.conn = None
+            self.cursor = None
             return False
-    
+
     def initialize_db(self) -> None:
         """
         Создает таблицы в базе данных, если их еще нет.
@@ -417,4 +515,4 @@ class LocalDataManager:
         if self.conn:
             self.conn.close()
             self.conn = None
-            self.cursor = None 
+            self.cursor = None
