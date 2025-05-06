@@ -56,11 +56,8 @@ class LocalDataManager:
                         drive.mount(drive_mount_point, force_remount=True) # force_remount может быть полезен
                         print("Google Drive успешно смонтирован.")
                     except Exception as e:
-                        print(f"Ошибка монтирования Google Drive: {e}")
-                        # Решаем, что делать дальше: можно выбросить исключение или работать без Drive
-                        # В данном случае, мы продолжим, но путь по умолчанию не будет работать
-                        # и пользовательский путь вне Drive вызовет предупреждение.
-                        # Можно добавить raise RuntimeError("Не удалось смонтировать Google Drive.") если это критично
+                        # Генерируем исключение вместо простого print
+                        raise RuntimeError(f"Не удалось смонтировать Google Drive: {e}. Автоматическое использование БД на Google Drive невозможно.")
                 else:
                     print("Google Drive уже смонтирован.")
 
@@ -71,9 +68,9 @@ class LocalDataManager:
                     self.db_path = default_colab_db_path
                     print(f"Путь к БД не указан, используется путь по умолчанию в Google Drive: {self.db_path}")
                 else:
+                    # Добавляем проверку пользовательского пути
                     if not db_path.startswith(drive_mount_point):
-                        print(f"Предупреждение: Указанный путь '{db_path}' не находится в {drive_mount_point}. "
-                              "Убедитесь, что путь доступен для записи.")
+                        print(f"ПРЕДУПРЕЖДЕНИЕ: Указанный путь '{db_path}' не начинается с '{drive_mount_point}'. Убедитесь, что база данных будет доступна по этому пути в среде Colab.")
                     self.db_path = db_path
                     print(f"Используется указанный путь к БД: {self.db_path}")
 
