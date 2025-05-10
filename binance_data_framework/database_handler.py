@@ -353,3 +353,14 @@ class GoogleDriveDataManager:
         if self.conn:
             self.conn.close()
             print("Соединение с БД на Google Drive закрыто.")
+
+    def debug_print_ohlcv_data(self, symbol, timeframe, limit=10):
+        print(f"Первые {limit} строк для {symbol}/{timeframe}:")
+        self.cursor.execute(
+            "SELECT timestamp, symbol, timeframe FROM ohlcv_data WHERE symbol=? AND timeframe=? ORDER BY timestamp ASC LIMIT ?",
+            (symbol, timeframe, limit)
+        )
+        rows = self.cursor.fetchall()
+        for row in rows:
+            ts, sym, tf = row
+            print(f"timestamp={ts} ({pd.to_datetime(ts, unit='ms')}), symbol={sym}, timeframe={tf}")
