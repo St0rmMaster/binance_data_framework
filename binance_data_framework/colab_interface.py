@@ -113,7 +113,7 @@ class DataDownloaderUI:
         
         # Виджет для отображения графика
         self.plot_checkbox = widgets.Checkbox(
-            value=True,
+            value=False,  # По умолчанию график не показывается
             description='Показать график',
             indent=False
         )

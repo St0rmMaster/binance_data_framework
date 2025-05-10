@@ -165,14 +165,25 @@ class GoogleDriveDataManager:
             if df is None or df.empty:
                 print("Нет данных для сохранения в БД на Google Drive.")
                 return False
-            records = df.to_records(index=False)
+            # Создаем копию DataFrame, сбрасываем индекс, чтобы timestamp стал колонкой
+            df_to_save = df.copy().reset_index()
+            # Преобразуем timestamp (datetime) в миллисекунды
+            df_to_save['timestamp'] = df_to_save['timestamp'].apply(self._timestamp_to_ms)
+            # Добавляем колонки symbol и timeframe
+            df_to_save['symbol'] = symbol
+            df_to_save['timeframe'] = timeframe
+            # Устанавливаем порядок колонок
+            columns_order = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
+            df_to_save = df_to_save[columns_order]
+            # Получаем записи для вставки
+            records = df_to_save.to_records(index=False)
             self.cursor.executemany(
                 'INSERT OR REPLACE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 records
             )
             # Обновляем метаданные
-            start_ts = int(df['timestamp'].min())
-            end_ts = int(df['timestamp'].max())
+            start_ts = int(df_to_save['timestamp'].min())
+            end_ts = int(df_to_save['timestamp'].max())
             self.cursor.execute(
                 'INSERT OR REPLACE INTO ohlcv_metadata (symbol, timeframe, start_timestamp, end_timestamp) VALUES (?, ?, ?, ?)',
                 (symbol, timeframe, start_ts, end_ts)
