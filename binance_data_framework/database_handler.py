@@ -193,11 +193,16 @@ class GoogleDriveDataManager:
                 print("Нет данных для сохранения в БД на Google Drive.")
                 return False
             df_to_save = df.copy().reset_index()
-            df_to_save['timestamp'] = df_to_save['timestamp'].apply(self._timestamp_to_ms)
+            # Преобразуем timestamp в миллисекунды и явно приводим к int64
+            df_to_save['timestamp'] = df_to_save['timestamp'].apply(self._timestamp_to_ms).astype('int64')
             df_to_save['symbol'] = symbol
             df_to_save['timeframe'] = timeframe
             columns_order = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
             df_to_save = df_to_save[columns_order]
+            # Диагностика типов
+            print("[DEBUG save_data] Типы колонок перед сохранением:")
+            print(df_to_save.dtypes)
+            print("[DEBUG save_data] Примеры timestamp:", df_to_save['timestamp'].head().tolist())
             records = df_to_save.to_records(index=False)
             self.cursor.executemany(
                 'INSERT OR REPLACE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
