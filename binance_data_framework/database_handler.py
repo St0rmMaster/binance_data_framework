@@ -22,12 +22,11 @@ class GoogleDriveDataManager:
         Автоматически проверяет среду выполнения и настраивает путь к базе данных на Google Drive.
         В случае запуска вне Colab выбрасывает исключение.
         """
-        # Попытка импорта get_ipython для определения среды
         try:
             from IPython import get_ipython
             is_colab = 'google.colab' in str(get_ipython())
         except ImportError:
-            is_colab = False # Если IPython не установлен, точно не Colab
+            is_colab = False
 
         if not is_colab:
             raise RuntimeError("ОШИБКА: Фреймворк предназначен для использования ИСКЛЮЧИТЕЛЬНО в среде Google Colab.")
@@ -46,8 +45,8 @@ class GoogleDriveDataManager:
         else:
             print("Google Drive уже смонтирован.")
 
-        db_parent_directory = '/content/drive/MyDrive/' # Основная папка MyDrive
-        self.db_directory = os.path.join(db_parent_directory, 'database_binance_framework') # Имя папки для БД
+        db_parent_directory = '/content/drive/MyDrive/'
+        self.db_directory = os.path.join(db_parent_directory, 'database_binance_framework')
         db_filename = 'binance_ohlcv_data.db'
         self.db_path = os.path.join(self.db_directory, db_filename)
 
@@ -79,7 +78,7 @@ class GoogleDriveDataManager:
             return True
         except sqlite3.Error as e:
             print(f"Ошибка подключения к БД на Google Drive ({self.db_path}): {e}")
-            self.conn = None # Сбрасываем соединение в случае ошибки
+            self.conn = None
             self.cursor = None
             return False
         except Exception as e:
@@ -96,7 +95,6 @@ class GoogleDriveDataManager:
             if not self.conn:
                 print("Нет соединения с БД на Google Drive для инициализации.")
                 return
-            # Создаем таблицу для хранения OHLCV данных
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ohlcv_data (
                     timestamp INTEGER, 
@@ -110,11 +108,9 @@ class GoogleDriveDataManager:
                     PRIMARY KEY (timestamp, symbol, timeframe)
                 )
             ''')
-            # Создаем индексы для ускорения запросов
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_symbol ON ohlcv_data (symbol)')
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_timeframe ON ohlcv_data (timeframe)')
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON ohlcv_data (timestamp)')
-            # Создаем таблицу метаданных для отслеживания загруженных данных
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ohlcv_metadata (
                     symbol TEXT,
@@ -174,12 +170,10 @@ class GoogleDriveDataManager:
             '1d': 24 * 60 * 60 * 1000,
             '3d': 3 * 24 * 60 * 60 * 1000,
             '1w': 7 * 24 * 60 * 60 * 1000,
-            # '1M': 30 * 24 * 60 * 60 * 1000, # Месяц не фиксирован, можно приблизительно
         }
         if timeframe in mapping:
             return mapping[timeframe]
         elif timeframe == '1M':
-            # Приблизительно 30 дней
             return 30 * 24 * 60 * 60 * 1000
         else:
             return None
@@ -198,23 +192,17 @@ class GoogleDriveDataManager:
             if df is None or df.empty:
                 print("Нет данных для сохранения в БД на Google Drive.")
                 return False
-            # Создаем копию DataFrame, сбрасываем индекс, чтобы timestamp стал колонкой
             df_to_save = df.copy().reset_index()
-            # Преобразуем timestamp (datetime) в миллисекунды
             df_to_save['timestamp'] = df_to_save['timestamp'].apply(self._timestamp_to_ms)
-            # Добавляем колонки symbol и timeframe
             df_to_save['symbol'] = symbol
             df_to_save['timeframe'] = timeframe
-            # Устанавливаем порядок колонок
             columns_order = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
             df_to_save = df_to_save[columns_order]
-            # Получаем записи для вставки
             records = df_to_save.to_records(index=False)
             self.cursor.executemany(
                 'INSERT OR REPLACE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 records
             )
-            # Обновляем метаданные
             start_ts = int(df_to_save['timestamp'].min())
             end_ts = int(df_to_save['timestamp'].max())
             self.cursor.execute(
@@ -309,16 +297,20 @@ class GoogleDriveDataManager:
         try:
             start_ms = self._timestamp_to_ms(start_date)
             end_ms = self._timestamp_to_ms(end_date)
+            print(f"[DEBUG get_data] SQL Query Params: symbol={symbol}, timeframe={timeframe}, start_ms={start_ms}, end_ms={end_ms}")
             self.cursor.execute(
                 'SELECT * FROM ohlcv_data WHERE symbol=? AND timeframe=? AND timestamp>=? AND timestamp<=? ORDER BY timestamp ASC',
                 (symbol, timeframe, start_ms, end_ms)
             )
             rows = self.cursor.fetchall()
+            print(f"[DEBUG get_data] Rows fetched from DB: {len(rows)}")
             if not rows:
                 print("Нет данных в БД на Google Drive для указанного периода.")
                 return pd.DataFrame()
             columns = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
             df = pd.DataFrame(rows, columns=columns)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
             return df
         except sqlite3.Error as e:
             print(f"Ошибка при получении данных из БД на Google Drive: {e}")
@@ -341,6 +333,11 @@ class GoogleDriveDataManager:
                 return pd.DataFrame()
             columns = ['symbol', 'timeframe', 'start_timestamp', 'end_timestamp']
             df = pd.DataFrame(rows, columns=columns)
+            # Преобразуем start_timestamp и end_timestamp в читаемые даты
+            df['start_date'] = pd.to_datetime(df['start_timestamp'], unit='ms')
+            df['end_date'] = pd.to_datetime(df['end_timestamp'], unit='ms')
+            # Для удобства отображения переместим новые колонки вперед
+            df = df[['symbol', 'timeframe', 'start_date', 'end_date', 'start_timestamp', 'end_timestamp']]
             return df
         except sqlite3.Error as e:
             print(f"Ошибка при получении информации о сохраненных данных в БД на Google Drive: {e}")

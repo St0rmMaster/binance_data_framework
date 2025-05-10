@@ -353,31 +353,20 @@ class DataDownloaderUI:
         """
         with self.output:
             clear_output()
-            
             print("Запрос информации о данных на Google Drive...")
-            
-            # Получаем информацию о сохраненных данных
             stored_info = self.db_manager.get_stored_info()
-            
             if stored_info is None or stored_info.empty:
                 print("В БД на Google Drive нет сохраненных данных")
                 return
-            
             print("\nДоступные данные в БД на Google Drive:")
-            
-            # Выводим информацию в виде таблицы
-            display(stored_info)
-            
-            # Подготавливаем сводку доступных символов и таймфреймов
+            # Выводим только читаемые даты и основные поля
+            display(stored_info[['symbol', 'timeframe', 'start_date', 'end_date']])
             unique_symbols = stored_info['symbol'].unique()
             unique_timeframes = stored_info['timeframe'].unique()
-            
             print(f"\nВсего уникальных символов: {len(unique_symbols)}")
             print(f"Всего уникальных таймфреймов: {len(unique_timeframes)}")
-            
             print("\nСписок символов:")
             print(", ".join(unique_symbols))
-            
             print("\nСписок таймфреймов:")
             print(", ".join(unique_timeframes))
     
