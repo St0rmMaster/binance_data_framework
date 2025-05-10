@@ -151,6 +151,39 @@ class GoogleDriveDataManager:
         """
         return datetime.fromtimestamp(ms / 1000)
 
+    def _get_timeframe_duration_ms(self, timeframe: str) -> Optional[int]:
+        """
+        Возвращает длительность таймфрейма в миллисекундах.
+        Args:
+            timeframe: строка таймфрейма Binance (например, '1m', '5m', '1h', '1d', '1w', '1M')
+        Returns:
+            int: длительность таймфрейма в миллисекундах, либо None если не удалось определить
+        """
+        mapping = {
+            '1m': 60 * 1000,
+            '3m': 3 * 60 * 1000,
+            '5m': 5 * 60 * 1000,
+            '15m': 15 * 60 * 1000,
+            '30m': 30 * 1000,
+            '1h': 60 * 60 * 1000,
+            '2h': 2 * 60 * 60 * 1000,
+            '4h': 4 * 60 * 60 * 1000,
+            '6h': 6 * 60 * 60 * 1000,
+            '8h': 8 * 60 * 60 * 1000,
+            '12h': 12 * 60 * 60 * 1000,
+            '1d': 24 * 60 * 60 * 1000,
+            '3d': 3 * 24 * 60 * 60 * 1000,
+            '1w': 7 * 24 * 60 * 60 * 1000,
+            # '1M': 30 * 24 * 60 * 60 * 1000, # Месяц не фиксирован, можно приблизительно
+        }
+        if timeframe in mapping:
+            return mapping[timeframe]
+        elif timeframe == '1M':
+            # Приблизительно 30 дней
+            return 30 * 24 * 60 * 60 * 1000
+        else:
+            return None
+
     def save_data(self, df: pd.DataFrame, symbol: str, timeframe: str) -> bool:
         """
         Сохраняет данные из DataFrame в базу данных на Google Drive.
@@ -231,12 +264,18 @@ class GoogleDriveDataManager:
             if result:
                 meta_start_db, meta_end_db = result
                 print(f"[DEBUG check_data_exists] Найдены метаданные (ms): meta_start_db={meta_start_db}, meta_end_db={meta_end_db}")
-                covers_full_period_meta = (meta_start_db <= start_ms and meta_end_db >= end_ms)
+                duration_ms = self._get_timeframe_duration_ms(timeframe)
+                print(f"[DEBUG check_data_exists] Длительность таймфрейма duration_ms={duration_ms}")
+                if duration_ms:
+                    actual_coverage_end_ms = meta_end_db + duration_ms - 1
+                else:
+                    actual_coverage_end_ms = meta_end_db
+                print(f"[DEBUG check_data_exists] Фактическая правая граница покрытия actual_coverage_end_ms={actual_coverage_end_ms}")
+                covers_full_period_meta = (meta_start_db <= start_ms and actual_coverage_end_ms >= end_ms)
                 print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period_meta): {covers_full_period_meta}")
                 if covers_full_period_meta:
                     print(f"[DEBUG check_data_exists] Возврат: True (по метаданным), диапазон: ({self._ms_to_datetime(meta_start_db)}, {self._ms_to_datetime(meta_end_db)})")
                     return True, (self._ms_to_datetime(meta_start_db), self._ms_to_datetime(meta_end_db))
-                # Можно добавить дополнительную проверку по фактическим данным, если нужно
             else:
                 print(f"[DEBUG check_data_exists] Метаданные для {symbol}/{timeframe} не найдены.")
                 print("[DEBUG check_data_exists] Возврат: False, None (нет метаданных)")
