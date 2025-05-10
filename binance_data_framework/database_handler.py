@@ -278,6 +278,15 @@ class GoogleDriveDataManager:
                 else:
                     actual_coverage_end_ms = meta_end_db
                 print(f"[DEBUG check_data_exists] Фактическая правая граница покрытия actual_coverage_end_ms={actual_coverage_end_ms}")
+                # --- PATCH: если end_ms > actual_coverage_end_ms, но actual_coverage_end_ms близок к текущему времени, считаем покрытие полным ---
+                import time
+                now_ms = int(time.time() * 1000)
+                # Если пользователь запрашивает период до будущего времени, а в БД есть все до "сейчас" - считаем покрытие полным
+                if end_ms > actual_coverage_end_ms:
+                    # Если разница между actual_coverage_end_ms и now_ms меньше одного таймфрейма, считаем покрытие полным
+                    if abs(now_ms - actual_coverage_end_ms) < duration_ms * 2:
+                        print(f"[DEBUG check_data_exists] Покрытие до текущего момента. Считаем покрытие полным.")
+                        return True, (self._ms_to_datetime(meta_start_db), self._ms_to_datetime(meta_end_db))
                 covers_full_period_meta = (meta_start_db <= start_ms and actual_coverage_end_ms >= end_ms)
                 print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period_meta): {covers_full_period_meta}")
                 if covers_full_period_meta:
