@@ -89,12 +89,25 @@ class GoogleDriveDataManager:
 
     def initialize_db(self) -> None:
         """
-        Создает таблицы в базе данных, если их еще нет.
+        Создает таблицы в базе данных, если их еще нет. Если структура некорректна (timestamp не INTEGER), пересоздает таблицы.
         """
         try:
             if not self.conn:
                 print("Нет соединения с БД на Google Drive для инициализации.")
                 return
+            # Проверка структуры таблицы ohlcv_data
+            self.cursor.execute("PRAGMA table_info(ohlcv_data);")
+            columns = self.cursor.fetchall()
+            needs_recreate = False
+            for col in columns:
+                if (col[1] == 'timestamp' and col[2].upper() != 'INTEGER'):
+                    print("❌ Обнаружен некорректный тип timestamp в ohlcv_data. Будет выполнено пересоздание таблицы.")
+                    needs_recreate = True
+            if needs_recreate:
+                self.cursor.execute("DROP TABLE IF EXISTS ohlcv_data;")
+                self.cursor.execute("DROP TABLE IF EXISTS ohlcv_metadata;")
+                self.conn.commit()
+            # Создаем таблицу для хранения OHLCV данных
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ohlcv_data (
                     timestamp INTEGER, 
@@ -327,6 +340,7 @@ class GoogleDriveDataManager:
     def get_stored_info(self) -> pd.DataFrame:
         """
         Получает информацию о всех сохраненных данных в БД на Google Drive.
+        Также проверяет типы timestamp и предупреждает, если есть некорректные типы.
         Returns:
             pd.DataFrame: DataFrame с информацией о сохраненных данных
         """
@@ -343,6 +357,13 @@ class GoogleDriveDataManager:
             df['end_date'] = pd.to_datetime(df['end_timestamp'], unit='ms')
             # Для удобства отображения переместим новые колонки вперед
             df = df[['symbol', 'timeframe', 'start_date', 'end_date', 'start_timestamp', 'end_timestamp']]
+            # Проверка типов timestamp в ohlcv_data
+            self.cursor.execute("SELECT DISTINCT typeof(timestamp) FROM ohlcv_data LIMIT 10;")
+            types = self.cursor.fetchall()
+            if types and any(t[0] != 'integer' for t in types):
+                print(f"❌ ВНИМАНИЕ: В таблице ohlcv_data обнаружены некорректные типы timestamp: {types}. Рекомендуется пересоздать таблицу.")
+            else:
+                print("✅ Все значения timestamp в ohlcv_data имеют тип integer.")
             return df
         except sqlite3.Error as e:
             print(f"Ошибка при получении информации о сохраненных данных в БД на Google Drive: {e}")
@@ -369,3 +390,23 @@ class GoogleDriveDataManager:
         for row in rows:
             ts, sym, tf = row
             print(f"timestamp={ts} ({pd.to_datetime(ts, unit='ms')}), symbol={sym}, timeframe={tf}")
+
+    def debug_check_timestamps(self, symbol: str, timeframe: str, limit: int = 5):
+        """
+        Проверяет корректность хранения timestamp для заданного symbol/timeframe.
+        Выводит типы, значения и результат преобразования в дату.
+        """
+        print(f"Проверка первых {limit} строк для {symbol}/{timeframe} в ohlcv_data:")
+        self.cursor.execute(
+            "SELECT timestamp, typeof(timestamp), symbol, timeframe FROM ohlcv_data WHERE symbol=? AND timeframe=? ORDER BY timestamp ASC LIMIT ?",
+            (symbol, timeframe, limit)
+        )
+        rows = self.cursor.fetchall()
+        for ts, ttype, sym, tf in rows:
+            try:
+                dt = pd.to_datetime(ts, unit='ms') if ttype == 'integer' else None
+                print(f"timestamp={ts} (type={ttype}) -> {dt}, symbol={sym}, timeframe={tf}")
+            except Exception as e:
+                print(f"❌ Ошибка преобразования timestamp={ts} (type={ttype}): {e}")
+        if not rows:
+            print("Нет данных для указанного symbol/timeframe.")
