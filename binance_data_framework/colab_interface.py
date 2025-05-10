@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from typing import Optional, List, Dict, Any, Tuple, Union
 
 from binance_data_framework.api_connector import BinanceUSClient
-from binance_data_framework.database_handler import LocalDataManager
+from binance_data_framework.database_handler import GoogleDriveDataManager
 
 
 class DataDownloaderUI:
@@ -21,13 +21,13 @@ class DataDownloaderUI:
     Класс для создания интерактивного интерфейса для загрузки и отображения данных.
     """
     
-    def __init__(self, api_client: BinanceUSClient, db_manager: LocalDataManager):
+    def __init__(self, api_client: BinanceUSClient, db_manager: GoogleDriveDataManager):
         """
         Инициализация интерфейса.
         
         Args:
             api_client: Экземпляр BinanceUSClient для подключения к API
-            db_manager: Экземпляр LocalDataManager для работы с базой данных
+            db_manager: Экземпляр GoogleDriveDataManager для работы с базой данных на Google Drive
         """
         self.api_client = api_client
         self.db_manager = db_manager
@@ -91,15 +91,7 @@ class DataDownloaderUI:
             value=end_date.date(),
             style={'description_width': 'initial'}
         )
-        
-        # Виджет для опции использования только локальных данных
-        self.use_local_only_checkbox = widgets.Checkbox(
-            value=False,
-            description='Только локальные данные',
-            indent=False
-        )
-        
-        # Виджет для опции загрузки минимального таймфрейма и ресемплирования
+          # Виджет для опции загрузки минимального таймфрейма и ресемплирования
         self.use_resample_checkbox = widgets.Checkbox(
             value=False,
             description='Ресемплировать из мин. таймфрейма',
@@ -113,11 +105,10 @@ class DataDownloaderUI:
             button_style='primary',
             icon='download'
         )
-        
         self.show_local_button = widgets.Button(
-            description='Показать локальные данные',
+            description='Данные на Диске',
             button_style='info',
-            icon='database'
+            icon='cloud-download'
         )
         
         # Виджет для отображения графика
@@ -147,11 +138,9 @@ class DataDownloaderUI:
             # Получаем выбранные значения из виджетов
             symbol = self.symbol_dropdown.value
             timeframe = self.timeframe_dropdown.value
-            
             start_date = datetime.combine(self.start_date_picker.value, datetime.min.time())
             end_date = datetime.combine(self.end_date_picker.value, datetime.max.time())
             
-            use_local_only = self.use_local_only_checkbox.value
             use_resample = self.use_resample_checkbox.value
             plot_data = self.plot_checkbox.value
             
@@ -160,14 +149,13 @@ class DataDownloaderUI:
                 return
             
             print(f"Запрос данных для {symbol} на таймфрейме {timeframe} с {start_date.date()} по {end_date.date()}")
-            
-            # Получаем данные
+              # Получаем данные
             if use_resample and timeframe != '1m':
                 # Если выбрано ресемплирование и таймфрейм не 1m
-                df = self._get_resampled_data(symbol, timeframe, start_date, end_date, use_local_only)
+                df = self._get_resampled_data(symbol, timeframe, start_date, end_date)
             else:
                 # Стандартная логика получения данных
-                df = self._get_data(symbol, timeframe, start_date, end_date, use_local_only)
+                df = self._get_data(symbol, timeframe, start_date, end_date)
             
             if df is not None and not df.empty:
                 print(f"\nПолучено {len(df)} строк данных")
@@ -185,24 +173,21 @@ class DataDownloaderUI:
                     self._plot_data(df, symbol, timeframe)
             else:
                 print("Данные не получены")
-    
     def _get_data(
         self, 
         symbol: str, 
         timeframe: str, 
         start_date: datetime, 
-        end_date: datetime, 
-        use_local_only: bool
+        end_date: datetime
     ) -> Optional[pd.DataFrame]:
         """
-        Получает данные из локальной БД или API.
+        Получает данные из БД на Google Drive или API.
         
         Args:
             symbol: Торговая пара
             timeframe: Таймфрейм
             start_date: Дата начала периода
             end_date: Дата окончания периода
-            use_local_only: Флаг использования только локальных данных
             
         Returns:
             pd.DataFrame: DataFrame с данными или None в случае ошибки
@@ -211,20 +196,16 @@ class DataDownloaderUI:
         print(f"\n[DEBUG _get_data] Вызов check_data_exists для: symbol={symbol}, timeframe={timeframe}")
         print(f"[DEBUG _get_data] Период: start_date={start_date}, end_date={end_date}")
         
-        # Проверяем наличие данных в локальной БД
+        # Проверяем наличие данных в БД на Google Drive
         data_exists, date_range = self.db_manager.check_data_exists(symbol, timeframe, start_date, end_date)
         
         # Диагностические сообщения после проверки
         print(f"[DEBUG _get_data] Результат check_data_exists: data_exists={data_exists}, date_range={date_range}")
         
         if data_exists:
-            print(f"Данные найдены в локальной БД для {symbol} на таймфрейме {timeframe} в указанном периоде")
+            print(f"Данные найдены в БД на Google Drive для {symbol} на таймфрейме {timeframe} в указанном периоде")
             df = self.db_manager.get_data(symbol, timeframe, start_date, end_date)
             return df
-        
-        if use_local_only:
-            print("Выбрана опция 'Только локальные данные', но данные не найдены в БД")
-            return None
         
         # Запрашиваем данные из API
         print(f"Загрузка данных из API для {symbol} на таймфрейме {timeframe}")
@@ -232,18 +213,16 @@ class DataDownloaderUI:
         
         if df is not None and not df.empty:
             # Сохраняем полученные данные в БД
-            print("Сохранение данных в локальную БД...")
+            print("Сохранение данных в БД на Google Drive...")
             self.db_manager.save_data(df, symbol, timeframe)
         
         return df
-    
     def _get_resampled_data(
         self, 
         symbol: str, 
         target_timeframe: str, 
         start_date: datetime, 
-        end_date: datetime, 
-        use_local_only: bool
+        end_date: datetime
     ) -> Optional[pd.DataFrame]:
         """
         Получает данные с минимальным таймфреймом и ресемплирует их до целевого таймфрейма.
@@ -264,7 +243,7 @@ class DataDownloaderUI:
         print(f"Загрузка данных с таймфреймом {base_timeframe} для последующего ресемплирования до {target_timeframe}")
         
         # Получаем данные с минимальным таймфреймом
-        df_base = self._get_data(symbol, base_timeframe, start_date, end_date, use_local_only)
+        df_base = self._get_data(symbol, base_timeframe, start_date, end_date)
         
         if df_base is None or df_base.empty:
             print(f"Не удалось получить базовые данные с таймфреймом {base_timeframe}")
@@ -375,16 +354,16 @@ class DataDownloaderUI:
         with self.output:
             clear_output()
             
-            print("Запрос информации о локальных данных...")
+            print("Запрос информации о данных на Google Drive...")
             
             # Получаем информацию о сохраненных данных
             stored_info = self.db_manager.get_stored_info()
             
             if stored_info is None or stored_info.empty:
-                print("В базе данных нет сохраненных данных")
+                print("В БД на Google Drive нет сохраненных данных")
                 return
             
-            print("\nДоступные данные в локальной БД:")
+            print("\nДоступные данные в БД на Google Drive:")
             
             # Выводим информацию в виде таблицы
             display(stored_info)
@@ -409,7 +388,7 @@ class DataDownloaderUI:
         # Создаем контейнеры для группировки виджетов
         symbol_timeframe_container = widgets.HBox([self.symbol_dropdown, self.timeframe_dropdown])
         date_container = widgets.HBox([self.start_date_picker, self.end_date_picker])
-        options_container = widgets.HBox([self.use_local_only_checkbox, self.use_resample_checkbox, self.plot_checkbox])
+        options_container = widgets.HBox([self.use_resample_checkbox, self.plot_checkbox])
         buttons_container = widgets.HBox([self.load_button, self.show_local_button])
         
         # Компонуем все виджеты в вертикальный контейнер

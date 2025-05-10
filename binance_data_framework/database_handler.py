@@ -2,84 +2,69 @@
 # -*- coding: utf-8 -*-
 
 """
-Модуль для работы с локальной базой данных для хранения данных Binance.
+Модуль для работы с базой данных на Google Drive для хранения данных Binance.
 """
-
-import os
-import pandas as pd
-import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple, Union
+import os
+import sqlite3
+import pandas as pd
 
-class LocalDataManager:
+class GoogleDriveDataManager:
     """
-    Класс для управления локальной базой данных для хранения исторических данных.
+    Класс для управления базой данных на Google Drive для хранения исторических данных.
     Предназначен для работы исключительно в среде Google Colab с Google Drive.
     """
 
     def __init__(self):
         """
-        Инициализация менеджера локальной базы данных.
+        Инициализация менеджера базы данных на Google Drive.
         Автоматически проверяет среду выполнения и настраивает путь к базе данных на Google Drive.
         В случае запуска вне Colab выбрасывает исключение.
         """
-        self.conn = None
-        self.cursor = None
-        
+        # Попытка импорта get_ipython для определения среды
         try:
-            # Проверяем, запущен ли код в Colab
             from IPython import get_ipython
             is_colab = 'google.colab' in str(get_ipython())
-        except:
-            is_colab = False
-            
+        except ImportError:
+            is_colab = False # Если IPython не установлен, точно не Colab
+
         if not is_colab:
-            raise RuntimeError("Ошибка: Фреймворк binance_data_framework предназначен для использования только в среде Google Colab.")
-            
-        # Если мы здесь, значит код выполняется в Colab
-        print("Обнаружена среда Google Colab.")
-        try:
-            # Импортируем необходимые модули для работы с Google Drive
-            import os
-            from google.colab import drive
+            raise RuntimeError("ОШИБКА: Фреймворк предназначен для использования ИСКЛЮЧИТЕЛЬНО в среде Google Colab.")
 
-            drive_mount_point = '/content/drive'
-            if not os.path.ismount(drive_mount_point):
-                print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
-                try:
-                    drive.mount(drive_mount_point, force_remount=True)
-                    print("Google Drive успешно смонтирован.")
-                except Exception as e:
-                    raise RuntimeError(f"Не удалось смонтировать Google Drive: {e}. Автоматическое использование БД на Google Drive невозможно.")
-            else:
-                print("Google Drive уже смонтирован.")
+        print("Обнаружена среда Google Colab. Используется Google Drive для хранения БД.")
 
-            # Фиксированный путь к базе данных
-            db_directory = '/content/drive/MyDrive/database'
-            fixed_db_path = os.path.join(db_directory, 'binance_ohlcv_data.db')
-            
-            # Создаем директорию для БД, если она не существует
+        from google.colab import drive
+        drive_mount_point = '/content/drive'
+        if not os.path.ismount(drive_mount_point):
+            print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
             try:
-                os.makedirs(db_directory, exist_ok=True)
-                print(f"Директория '{db_directory}' проверена/создана.")
-            except OSError as e:
-                raise RuntimeError(f"Не удалось создать директорию для БД: {e}")
-                
-            # Устанавливаем путь к БД
-            self.db_path = fixed_db_path
-            print(f"Путь к БД: {self.db_path}")
+                drive.mount(drive_mount_point, force_remount=True)
+                print("Google Drive успешно смонтирован.")
+            except Exception as e:
+                raise RuntimeError(f"ОШИБКА: Не удалось смонтировать Google Drive: {e}. Работа фреймворка невозможна.")
+        else:
+            print("Google Drive уже смонтирован.")
 
-        except ImportError as e:
-            raise RuntimeError(f"Ошибка: Не удалось импортировать необходимые модули для работы с Google Colab: {e}") 
-        except Exception as e:
-            raise RuntimeError(f"Непредвиденная ошибка при настройке для Colab: {e}")
+        db_parent_directory = '/content/drive/MyDrive/' # Основная папка MyDrive
+        self.db_directory = os.path.join(db_parent_directory, 'database_binance_framework') # Имя папки для БД
+        db_filename = 'binance_ohlcv_data.db'
+        self.db_path = os.path.join(self.db_directory, db_filename)
 
-        # Подключаемся к БД и инициализируем таблицы
+        try:
+            os.makedirs(self.db_directory, exist_ok=True)
+            print(f"Директория для БД '{self.db_directory}' проверена/создана.")
+        except OSError as e:
+            raise RuntimeError(f"ОШИБКА: Не удалось создать директорию для БД '{self.db_directory}': {e}")
+
+        print(f"Путь к БД на Google Drive: {self.db_path}")
+
+        self.conn = None
+        self.cursor = None
         if self._connect():
             self.initialize_db()
         else:
-            # Если подключение не удалось, бросаем исключение
-            raise ConnectionError(f"Не удалось подключиться к базе данных по пути: {self.db_path}")
+            raise RuntimeError(f"ОШИБКА: Не удалось подключиться к БД на Google Drive: {self.db_path}")
 
     def _connect(self) -> bool:
         """
@@ -89,22 +74,16 @@ class LocalDataManager:
             bool: True, если соединение успешно, иначе False
         """
         try:
-            # Убедимся, что путь к БД установлен
-            if not hasattr(self, 'db_path') or not self.db_path:
-                 print("Ошибка: Путь к базе данных не определен перед подключением.")
-                 return False
-            print(f"Попытка подключения к БД: {self.db_path}")
-            self.conn = sqlite3.connect(self.db_path)
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.cursor = self.conn.cursor()
-            print("Соединение с БД установлено успешно.")
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных SQLite: {e}")
+            print(f"Ошибка подключения к БД на Google Drive ({self.db_path}): {e}")
             self.conn = None # Сбрасываем соединение в случае ошибки
             self.cursor = None
             return False
         except Exception as e:
-            print(f"Непредвиденная ошибка при подключении к базе данных: {e}")
+            print(f"Непредвиденная ошибка при подключении к БД на Google Drive: {e}")
             self.conn = None
             self.cursor = None
             return False
@@ -115,8 +94,8 @@ class LocalDataManager:
         """
         try:
             if not self.conn:
-                self._connect()
-            
+                print("Нет соединения с БД на Google Drive для инициализации.")
+                return
             # Создаем таблицу для хранения OHLCV данных
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ohlcv_data (
@@ -131,166 +110,83 @@ class LocalDataManager:
                     PRIMARY KEY (timestamp, symbol, timeframe)
                 )
             ''')
-            
             # Создаем индексы для ускорения запросов
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_symbol ON ohlcv_data (symbol)')
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_timeframe ON ohlcv_data (timeframe)')
             self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON ohlcv_data (timestamp)')
-            
             # Создаем таблицу метаданных для отслеживания загруженных данных
             self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS metadata (
+                CREATE TABLE IF NOT EXISTS ohlcv_metadata (
                     symbol TEXT,
                     timeframe TEXT,
-                    start_date INTEGER,
-                    end_date INTEGER,
-                    last_update INTEGER,
+                    start_timestamp INTEGER,
+                    end_timestamp INTEGER,
                     PRIMARY KEY (symbol, timeframe)
                 )
             ''')
-            
             self.conn.commit()
-            print("База данных инициализирована")
+            print(f"База данных на Google Drive ({self.db_path}) инициализирована.")
         except sqlite3.Error as e:
-            print(f"Ошибка при инициализации базы данных: {e}")
+            print(f"Ошибка инициализации БД на Google Drive: {e}")
         except Exception as e:
-            print(f"Непредвиденная ошибка при инициализации базы данных: {e}")
-    
+            print(f"Непредвиденная ошибка при инициализации БД на Google Drive: {e}")
+
     def _timestamp_to_ms(self, dt: datetime) -> int:
         """
         Преобразует объект datetime в миллисекунды.
-        
         Args:
             dt: Объект datetime
-            
         Returns:
             int: Timestamp в миллисекундах
         """
         return int(dt.timestamp() * 1000)
-    
+
     def _ms_to_datetime(self, ms: int) -> datetime:
         """
         Преобразует миллисекунды в объект datetime.
-        
         Args:
             ms: Timestamp в миллисекундах
-            
         Returns:
             datetime: Объект datetime
         """
         return datetime.fromtimestamp(ms / 1000)
-    
+
     def save_data(self, df: pd.DataFrame, symbol: str, timeframe: str) -> bool:
         """
-        Сохраняет данные из DataFrame в базу данных.
-        
+        Сохраняет данные из DataFrame в базу данных на Google Drive.
         Args:
             df: DataFrame с OHLCV данными
             symbol: Торговая пара
             timeframe: Таймфрейм
-            
         Returns:
-            bool: True, если данные успешно сохранены, иначе False
+            bool: True, если данные успешно сохранены в БД на Google Drive, иначе False
         """
         try:
-            if df.empty:
-                print("Пустой DataFrame, нечего сохранять")
+            if df is None or df.empty:
+                print("Нет данных для сохранения в БД на Google Drive.")
                 return False
-            
-            if not self.conn:
-                self._connect()
-            
-            # Подготавливаем данные для вставки
-            # Мы ожидаем, что индексом является timestamp в datetime
-            df_copy = df.copy()
-            
-            # Если индекс не является datetime, преобразуем его
-            if not isinstance(df_copy.index, pd.DatetimeIndex):
-                print("Индекс не является DatetimeIndex, пытаемся преобразовать")
-                df_copy.index = pd.to_datetime(df_copy.index)
-            
-            # Добавляем колонки symbol и timeframe
-            df_copy['symbol'] = symbol
-            df_copy['timeframe'] = timeframe
-            
-            # Преобразуем индекс в timestamp в миллисекундах
-            df_copy['timestamp'] = df_copy.index.astype(int) // 10**6  # наносекунды в миллисекунды
-            
-            # Сбрасываем индекс для подготовки данных к вставке
-            df_copy.reset_index(drop=True, inplace=True)
-            
-            # Выбираем нужные колонки в нужном порядке
-            columns = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
-            df_prepared = df_copy[columns]
-            
-            # Вставляем данные
-            df_prepared.to_sql('ohlcv_data', self.conn, if_exists='append', index=False, method='multi')
-            
-            # Обновляем метаданные
-            min_timestamp = df_copy['timestamp'].min()
-            max_timestamp = df_copy['timestamp'].max()
-            current_time = int(datetime.now().timestamp() * 1000)
-            
-            # Проверяем, существуют ли уже метаданные для этого символа и таймфрейма
-            self.cursor.execute(
-                'SELECT start_date, end_date FROM metadata WHERE symbol = ? AND timeframe = ?',
-                (symbol, timeframe)
+            records = df.to_records(index=False)
+            self.cursor.executemany(
+                'INSERT OR REPLACE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                records
             )
-            result = self.cursor.fetchone()
-            
-            if result:
-                # Обновляем существующие метаданные
-                existing_start, existing_end = result
-                start_date = min(existing_start, min_timestamp)
-                end_date = max(existing_end, max_timestamp)
-                
-                self.cursor.execute(
-                    'UPDATE metadata SET start_date = ?, end_date = ?, last_update = ? WHERE symbol = ? AND timeframe = ?',
-                    (start_date, end_date, current_time, symbol, timeframe)
-                )
-            else:
-                # Вставляем новые метаданные
-                self.cursor.execute(
-                    'INSERT INTO metadata (symbol, timeframe, start_date, end_date, last_update) VALUES (?, ?, ?, ?, ?)',
-                    (symbol, timeframe, min_timestamp, max_timestamp, current_time)
-                )
-            
+            # Обновляем метаданные
+            start_ts = int(df['timestamp'].min())
+            end_ts = int(df['timestamp'].max())
+            self.cursor.execute(
+                'INSERT OR REPLACE INTO ohlcv_metadata (symbol, timeframe, start_timestamp, end_timestamp) VALUES (?, ?, ?, ?)',
+                (symbol, timeframe, start_ts, end_ts)
+            )
             self.conn.commit()
-            print(f"Данные успешно сохранены для {symbol} на таймфрейме {timeframe}")
+            print(f"Данные успешно сохранены в БД на Google Drive для {symbol}/{timeframe}.")
             return True
-            
         except sqlite3.IntegrityError:
-            # Ошибка уникальности (дубликаты)
-            print("Произошла ошибка уникальности при сохранении данных. Некоторые данные уже существуют.")
-            self.conn.rollback()
-            
-            # Альтернативный подход - вставка с игнорированием дубликатов
-            try:
-                # Преобразуем DataFrame в список кортежей
-                data_to_insert = df_copy[columns].values.tolist()
-                
-                # Вставляем данные с игнорированием дубликатов
-                self.cursor.executemany(
-                    'INSERT OR IGNORE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    data_to_insert
-                )
-                
-                # Обновляем метаданные как и раньше
-                self.conn.commit()
-                print(f"Данные успешно сохранены (исключая дубликаты) для {symbol} на таймфрейме {timeframe}")
-                return True
-                
-            except Exception as e:
-                print(f"Ошибка при альтернативном сохранении данных: {e}")
-                self.conn.rollback()
-                return False
-                
-        except Exception as e:
-            print(f"Ошибка при сохранении данных: {e}")
-            if self.conn:
-                self.conn.rollback()
+            print("Ошибка целостности при сохранении данных в БД на Google Drive.")
             return False
-    
+        except Exception as e:
+            print(f"Ошибка при сохранении данных в БД на Google Drive: {e}")
+            return False
+
     def check_data_exists(
         self, 
         symbol: str, 
@@ -299,98 +195,48 @@ class LocalDataManager:
         end_date: datetime
     ) -> Tuple[bool, Optional[Tuple[datetime, datetime]]]:
         """
-        Проверяет наличие данных для указанного символа, таймфрейма и периода.
-        
+        Проверяет наличие данных для указанного символа, таймфрейма и периода в БД на Google Drive.
         Args:
             symbol: Торговая пара
             timeframe: Таймфрейм
             start_date: Дата начала периода
             end_date: Дата окончания периода
-            
         Returns:
             Tuple[bool, Optional[Tuple[datetime, datetime]]]: 
-                - bool: True, если данные существуют, иначе False
+                - bool: True, если данные существуют в БД на Google Drive, иначе False
                 - Optional[Tuple[datetime, datetime]]: Доступный диапазон дат, если данные существуют
         """
+        print(f"\n[DEBUG check_data_exists] Проверка: symbol={symbol}, timeframe={timeframe}")
+        print(f"[DEBUG check_data_exists] Запрошенный период: start={start_date}, end={end_date}")
+        start_ms = self._timestamp_to_ms(start_date)
+        end_ms = self._timestamp_to_ms(end_date)
+        print(f"[DEBUG check_data_exists] Запрошенный период (ms): start_ms={start_ms}, end_ms={end_ms}")
         try:
-            if not self.conn:
-                self._connect()
-            
-            # Диагностическое логирование
-            print(f"\n[DEBUG check_data_exists] Проверка: symbol={symbol}, timeframe={timeframe}")
-            print(f"[DEBUG check_data_exists] Запрошенный период: start={start_date}, end={end_date}")
-            
-            # Преобразуем даты в миллисекунды
-            start_ms = self._timestamp_to_ms(start_date)
-            end_ms = self._timestamp_to_ms(end_date)
-            print(f"[DEBUG check_data_exists] Запрошенный период (ms): start_ms={start_ms}, end_ms={end_ms}")
-            
-            # Сначала проверяем метаданные для быстрого ответа
             self.cursor.execute(
-                'SELECT start_date, end_date FROM metadata WHERE symbol = ? AND timeframe = ?',
+                'SELECT start_timestamp, end_timestamp FROM ohlcv_metadata WHERE symbol=? AND timeframe=?',
                 (symbol, timeframe)
             )
             result = self.cursor.fetchone()
-            
-            if not result:
-                print(f"[DEBUG check_data_exists] Метаданные для {symbol}/{timeframe} не найдены.")
-                print("[DEBUG check_data_exists] Возврат: False (нет метаданных)")
-                # Нет метаданных, значит нет данных
-                return False, None
-            
-            meta_start, meta_end = result
-            print(f"[DEBUG check_data_exists] Найдены метаданные (ms): meta_start={meta_start}, meta_end={meta_end}")
-            
-            # Проверяем, покрывают ли имеющиеся данные запрошенный период
-            covers_full_period_meta = (meta_start <= start_ms and meta_end >= end_ms)
-            print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period): {covers_full_period_meta}")
-            
-            if covers_full_period_meta:
-                print("[DEBUG check_data_exists] Возврат: True (по метаданным)")
-                # Данные полностью покрывают запрошенный период
-                return True, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
+            if result:
+                meta_start_db, meta_end_db = result
+                print(f"[DEBUG check_data_exists] Найдены метаданные (ms): meta_start_db={meta_start_db}, meta_end_db={meta_end_db}")
+                covers_full_period_meta = (meta_start_db <= start_ms and meta_end_db >= end_ms)
+                print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period_meta): {covers_full_period_meta}")
+                if covers_full_period_meta:
+                    print(f"[DEBUG check_data_exists] Возврат: True (по метаданным), диапазон: ({self._ms_to_datetime(meta_start_db)}, {self._ms_to_datetime(meta_end_db)})")
+                    return True, (self._ms_to_datetime(meta_start_db), self._ms_to_datetime(meta_end_db))
+                # Можно добавить дополнительную проверку по фактическим данным, если нужно
             else:
-                print("[DEBUG check_data_exists] Период НЕ покрыт по метаданным.")
-            
-            # Проверяем фактическое наличие данных в базе
-            self.cursor.execute(
-                '''
-                SELECT MIN(timestamp), MAX(timestamp) 
-                FROM ohlcv_data 
-                WHERE symbol = ? AND timeframe = ? AND timestamp >= ? AND timestamp <= ?
-                ''',
-                (symbol, timeframe, start_ms, end_ms)
-            )
-            result = self.cursor.fetchone()
-            
-            if not result or result[0] is None or result[1] is None:
-                print(f"[DEBUG check_data_exists] Фактические данные для запрошенного периода не найдены.")
-                print("[DEBUG check_data_exists] Возврат: False (нет фактических данных)")
-                # Нет данных для указанного периода
+                print(f"[DEBUG check_data_exists] Метаданные для {symbol}/{timeframe} не найдены.")
+                print("[DEBUG check_data_exists] Возврат: False, None (нет метаданных)")
                 return False, None
-            
-            actual_start, actual_end = result
-            print(f"[DEBUG check_data_exists] Найдены фактические данные (ms): actual_start={actual_start}, actual_end={actual_end}")
-            
-            # Проверяем, покрывают ли фактические данные весь запрошенный период
-            covers_full_period_actual = (actual_start <= start_ms and actual_end >= end_ms)
-            print(f"[DEBUG check_data_exists] Покрытие по факт. данным (covers_full_period): {covers_full_period_actual}")
-            
-            if covers_full_period_actual:
-                # Данные полностью покрывают запрошенный период
-                print(f"[DEBUG check_data_exists] Возврат: True (по факт. данным)")
-                return True, (self._ms_to_datetime(actual_start), self._ms_to_datetime(actual_end))
-            
-            # Данные частично покрывают период
-            print(f"[DEBUG check_data_exists] Данные лишь частично покрывают запрошенный период.")
-            print(f"[DEBUG check_data_exists] Возврат: False (частичное покрытие)")
-            return False, (self._ms_to_datetime(meta_start), self._ms_to_datetime(meta_end))
-            
+            print("[DEBUG check_data_exists] Возврат: False, None (не покрывает период)")
+            return False, None
         except sqlite3.Error as e:
-            print(f"Ошибка при проверке наличия данных: {e}")
+            print(f"Ошибка при проверке наличия данных в БД на Google Drive: {e}")
             return False, None
         except Exception as e:
-            print(f"Непредвиденная ошибка при проверке наличия данных: {e}")
+            print(f"Непредвиденная ошибка при проверке наличия данных в БД на Google Drive: {e}")
             return False, None
 
     def get_data(
@@ -401,103 +247,62 @@ class LocalDataManager:
         end_date: datetime
     ) -> pd.DataFrame:
         """
-        Получает данные из базы данных для указанного символа, таймфрейма и периода.
-        
+        Получает данные из базы данных на Google Drive для указанного символа, таймфрейма и периода.
         Args:
             symbol: Торговая пара
             timeframe: Таймфрейм
             start_date: Дата начала периода
             end_date: Дата окончания периода
-            
         Returns:
             pd.DataFrame: DataFrame с OHLCV данными
         """
         try:
-            if not self.conn:
-                self._connect()
-            
-            # Преобразуем даты в миллисекунды
             start_ms = self._timestamp_to_ms(start_date)
             end_ms = self._timestamp_to_ms(end_date)
-            
-            # Запрашиваем данные
-            query = '''
-                SELECT timestamp, open, high, low, close, volume
-                FROM ohlcv_data
-                WHERE symbol = ? AND timeframe = ? AND timestamp >= ? AND timestamp <= ?
-                ORDER BY timestamp
-            '''
-            
-            df = pd.read_sql_query(
-                query, 
-                self.conn, 
-                params=(symbol, timeframe, start_ms, end_ms)
+            self.cursor.execute(
+                'SELECT * FROM ohlcv_data WHERE symbol=? AND timeframe=? AND timestamp>=? AND timestamp<=? ORDER BY timestamp ASC',
+                (symbol, timeframe, start_ms, end_ms)
             )
-            
-            if df.empty:
-                print(f"Данные не найдены для {symbol} на таймфрейме {timeframe} в указанном периоде")
+            rows = self.cursor.fetchall()
+            if not rows:
+                print("Нет данных в БД на Google Drive для указанного периода.")
                 return pd.DataFrame()
-            
-            # Преобразуем timestamp в datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            
-            # Устанавливаем timestamp в качестве индекса
-            df.set_index('timestamp', inplace=True)
-            
-            print(f"Получено {len(df)} свечей для {symbol} на таймфрейме {timeframe}")
-            
+            columns = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
+            df = pd.DataFrame(rows, columns=columns)
             return df
-            
         except sqlite3.Error as e:
-            print(f"Ошибка при получении данных из БД: {e}")
+            print(f"Ошибка при получении данных из БД на Google Drive: {e}")
             return pd.DataFrame()
         except Exception as e:
-            print(f"Непредвиденная ошибка при получении данных из БД: {e}")
+            print(f"Непредвиденная ошибка при получении данных из БД на Google Drive: {e}")
             return pd.DataFrame()
-    
+
     def get_stored_info(self) -> pd.DataFrame:
         """
-        Получает информацию о всех сохраненных данных в базе.
-        
+        Получает информацию о всех сохраненных данных в БД на Google Drive.
         Returns:
             pd.DataFrame: DataFrame с информацией о сохраненных данных
         """
         try:
-            if not self.conn:
-                self._connect()
-            
-            # Запрашиваем метаданные из БД
-            query = '''
-                SELECT symbol, timeframe, start_date, end_date, last_update
-                FROM metadata
-                ORDER BY symbol, timeframe
-            '''
-            
-            df = pd.read_sql_query(query, self.conn)
-            
-            if df.empty:
-                print("В базе данных нет сохраненных данных")
+            self.cursor.execute('SELECT * FROM ohlcv_metadata')
+            rows = self.cursor.fetchall()
+            if not rows:
+                print("В БД на Google Drive нет сохраненных данных.")
                 return pd.DataFrame()
-            
-            # Преобразуем timestamp в datetime
-            timestamp_columns = ['start_date', 'end_date', 'last_update']
-            for col in timestamp_columns:
-                df[col] = pd.to_datetime(df[col], unit='ms')
-            
+            columns = ['symbol', 'timeframe', 'start_timestamp', 'end_timestamp']
+            df = pd.DataFrame(rows, columns=columns)
             return df
-            
         except sqlite3.Error as e:
-            print(f"Ошибка при получении информации о сохраненных данных: {e}")
+            print(f"Ошибка при получении информации о сохраненных данных в БД на Google Drive: {e}")
             return pd.DataFrame()
         except Exception as e:
-            print(f"Непредвиденная ошибка при получении информации о сохраненных данных: {e}")
+            print(f"Непредвиденная ошибка при получении информации о сохраненных данных в БД на Google Drive: {e}")
             return pd.DataFrame()
-    
+
     def close(self):
         """
         Закрывает соединение с базой данных.
         """
         if self.conn:
             self.conn.close()
-            self.conn = None
-            self.cursor = None
+            print("Соединение с БД на Google Drive закрыто.")
