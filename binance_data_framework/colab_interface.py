@@ -314,16 +314,14 @@ class DataDownloaderUI:
             self.use_resample_checkbox,
             self.plot_checkbox,
             self.load_button,
-            self.progress_bar  # Прогресс-бар в левом блоке
+            self.progress_bar
         ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
         # Правая колонка: управление локальными данными (заполняется динамически)
         if not hasattr(self, 'local_data_management_area'):
-            self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='420px', padding='10px', align_items='flex-start'))
+            self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
-        # Кнопка "Данные на Диске" теперь в правой колонке
         right_column = widgets.VBox([
-            self.show_local_button,
             self.local_data_management_area
         ], layout=widgets.Layout(width='420px', padding='10px', align_items='flex-start'))
 
@@ -338,6 +336,9 @@ class DataDownloaderUI:
             self.output
         ])
         display(main_container)
+
+        # Автоматически загружаем данные при открытии UI
+        self._on_show_local_button_clicked(None)
 
     def _get_data(
         self, 
@@ -514,7 +515,7 @@ class DataDownloaderUI:
         # Заголовок
         right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
         # Прокручиваемый список чекбоксов
-        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='400px', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
+        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='520px', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
         self.local_data_checkboxes = {}
         checkboxes = []
         for _, row in stored_info.iterrows():
