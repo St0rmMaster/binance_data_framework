@@ -514,7 +514,7 @@ class DataDownloaderUI:
         # Заголовок
         right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
         # Прокручиваемый список чекбоксов
-        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='auto', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
+        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='400px', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
         self.local_data_checkboxes = {}
         checkboxes = []
         for _, row in stored_info.iterrows():
