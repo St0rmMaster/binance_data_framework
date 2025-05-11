@@ -515,7 +515,12 @@ class DataDownloaderUI:
         # Заголовок
         right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
         # Прокручиваемый список чекбоксов
-        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='100%', min_width='480px', max_width='none', max_height='400px', overflow_y='auto', overflow_x='hidden', border='1px solid lightgray', padding='5px', margin='0 0 10px 0', box_sizing='border-box', display='block'))
+        local_data_items_container = widgets.VBox(layout=widgets.Layout(
+            width='100%', min_width='480px', max_width='none', max_height='400px',
+            overflow_y='auto', overflow_x='hidden', border='1px solid lightgray',
+            padding='5px', margin='0 0 10px 0', box_sizing='border-box', display='block',
+            flex_flow='column', flex_wrap='nowrap',
+        ))
         self.local_data_checkboxes = {}
         checkboxes = []
         for _, row in stored_info.iterrows():
@@ -546,6 +551,16 @@ class DataDownloaderUI:
         ])
         # Обновить правую колонку
         self.local_data_management_area.children = (right_header, local_data_items_container, action_buttons_for_local_data)
+
+        # Удаляем горизонтальный скролл у всего интерфейса (VBox/HBox)
+        # Применяем к main_container после display
+        import time
+        time.sleep(0.1)  # Дать время на отрисовку
+        from IPython.display import Javascript, display as jsdisplay
+        jsdisplay(Javascript('''
+        Array.from(document.querySelectorAll('.widget-box, .widget-hbox, .widget-vbox, .widget-container'))
+          .forEach(el => { el.style.overflowX = 'hidden'; el.style.maxWidth = '100vw'; });
+        '''))
 
     def _on_export_local_data_clicked(self, button, export_format: str) -> None:
         """
