@@ -161,23 +161,21 @@ class DataDownloaderUI:
         # --- Инициализация видимых чекбоксов ---
         self._update_visible_symbol_checkboxes()
 
-        # Обновление layout для компактности
-        self.timeframe_dropdown.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.symbol_filter_input.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.select_all_symbols_checkbox.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
+        # Обновление layout для компактности и двухколоночного вида
+        self.timeframe_dropdown.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.symbol_filter_input.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.select_all_symbols_checkbox.layout = widgets.Layout(width='280px', margin='0 0 5px 0')
         self.symbol_checkboxes_container.layout = widgets.Layout(
-            max_height='300px',
-            overflow_y='auto',
-            border='1px solid lightgray',
-            padding='5px',
-            width='250px'
-        )
-        self.start_date_picker.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.end_date_picker.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.use_resample_checkbox.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.plot_checkbox.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.load_button.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
-        self.show_local_button.layout = widgets.Layout(width='250px', margin='0 0 5px 0')
+            width='280px', max_height='250px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 8px 0')
+        self.start_date_picker.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.end_date_picker.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.use_resample_checkbox.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.plot_checkbox.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
+        self.load_button.layout = widgets.Layout(width='280px', margin='5px 0')
+        self.show_local_button.layout = widgets.Layout(width='280px', margin='5px 0')
+        self.export_data_button.layout = widgets.Layout(width='280px', margin='5px 0')
+        # Для правой колонки (локальные данные)
+        self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
     def _update_visible_symbol_checkboxes(self, change=None):
         """
@@ -259,6 +257,17 @@ class DataDownloaderUI:
                 self.progress_bar.description = 'Завершено'
             else:
                 self.progress_bar.layout.visibility = 'hidden'
+            # --- Информация о доступе к данным ---
+            if self.last_loaded_data_params and self.last_loaded_data_params.get('dataframes'):
+                print("\n--- Доступ к загруженным данным ---")
+                print("Вы можете получить доступ к загруженным DataFrame через атрибут 'last_loaded_data_params':")
+                print("Например, для первого загруженного символа:")
+                print("  df_dict = ui.last_loaded_data_params['dataframes']")
+                print("  first_symbol = list(df_dict.keys())[0]")
+                print("  my_dataframe = df_dict[first_symbol]")
+                print("Или перебрать все загруженные:")
+                print("  for symbol, df in ui.last_loaded_data_params['dataframes'].items():")
+                print("      # ваша обработка df для symbol")
 
     def _on_delete_data_button_clicked(self, button):
         symbol = self.delete_symbol_input.value.strip()
@@ -308,10 +317,10 @@ class DataDownloaderUI:
         """
         Отображает интерактивный интерфейс в Jupyter/Colab.
         """
-        clear_output(wait=True)  # Очистка вывода перед отображением интерфейса
+        clear_output(wait=True)  # Окончательная очистка вывода
 
-        # Основной контейнер для элементов управления
-        left_panel_controls = widgets.VBox([
+        # Левая колонка: загрузка новых данных
+        left_column = widgets.VBox([
             widgets.HTML("<h4>Параметры загрузки:</h4>"),
             self.timeframe_dropdown,
             self.symbol_filter_input,
@@ -321,24 +330,27 @@ class DataDownloaderUI:
             self.start_date_picker,
             self.end_date_picker,
             self.use_resample_checkbox,
-            self.plot_checkbox
-        ], layout=widgets.Layout(width='auto', align_items='flex-start'))
-
-        # Кнопки действий
-        action_buttons_box = widgets.VBox([
+            self.plot_checkbox,
             self.load_button,
-            self.show_local_button
-        ], layout=widgets.Layout(margin='10px 0'))
+            self.export_data_button
+        ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
-        # Основной контейнер
+        # Правая колонка: управление локальными данными (заполняется динамически)
+        if not hasattr(self, 'local_data_management_area'):
+            self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
+
+        main_controls_layout = widgets.HBox([
+            left_column,
+            self.local_data_management_area
+        ])
+
         main_container = widgets.VBox([
             widgets.HTML("<h2>Загрузчик данных Binance US</h2>"),
-            left_panel_controls,
-            action_buttons_box,
+            self.show_local_button,
+            main_controls_layout,
             self.progress_bar,
             self.output
         ])
-
         display(main_container)
     
     def _get_data(
@@ -514,54 +526,53 @@ class DataDownloaderUI:
     
     def _on_show_local_button_clicked(self, button) -> None:
         """
-        Обработчик для кнопки "Данные на Диске". Отображает список доступных данных с чекбоксами.
+        Обработчик для кнопки "Данные на Диске". Отображает список доступных данных с чекбоксами в правой колонке.
         """
         with self.output:
             clear_output(wait=True)
-            stored_info = self.db_manager.get_stored_info()
-            if stored_info.empty:
+        # Очистить правую колонку
+        self.local_data_management_area.children = []
+        stored_info = self.db_manager.get_stored_info()
+        self.current_stored_info = stored_info  # Для экспорта/удаления
+        if stored_info.empty:
+            with self.output:
                 print("Нет данных в базе данных на Google Drive.")
-                return
-
-            print("Доступные данные в БД на Google Drive:")
-
-            # Контейнер для списка данных
-            local_data_list_container = widgets.VBox()
-            self.local_data_checkboxes = {}
-
-            for _, row in stored_info.iterrows():
-                symbol, timeframe, start_date, end_date = row['symbol'], row['timeframe'], row['start_date'], row['end_date']
-                checkbox = widgets.Checkbox(
-                    description=f"{symbol} - {timeframe} (с {start_date} по {end_date})",
-                    value=False,
-                    indent=False
-                )
-                self.local_data_checkboxes[(symbol, timeframe)] = checkbox
-                local_data_list_container.children += (checkbox,)
-
-            # Кнопки действий
-            self.export_local_csv_button = widgets.Button(description='Экспорт в CSV', icon='file-excel')
-            self.export_local_parquet_button = widgets.Button(description='Экспорт в Parquet', icon='file-archive')
-            self.delete_local_selected_button = widgets.Button(description='Удалить выбранное', button_style='danger', icon='trash')
-            self.confirm_delete_local_checkbox = widgets.Checkbox(description='Подтверждаю удаление', value=False, indent=False)
-
-            # Привязка обработчиков
-            self.export_local_csv_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='CSV'))
-            self.export_local_parquet_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='Parquet'))
-            self.delete_local_selected_button.on_click(self._on_delete_local_selected_clicked)
-
-            # Отображение
-            display(local_data_list_container)
-            display(widgets.HBox([
-                self.export_local_csv_button,
-                self.export_local_parquet_button,
-                self.delete_local_selected_button
-            ]))
-            display(self.confirm_delete_local_checkbox)
+            return
+        # Заголовок
+        right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
+        # Прокручиваемый список чекбоксов
+        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='auto', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
+        self.local_data_checkboxes = {}
+        checkboxes = []
+        for _, row in stored_info.iterrows():
+            symbol, timeframe, start_date, end_date = row['symbol'], row['timeframe'], row['start_date'], row['end_date']
+            cb = widgets.Checkbox(
+                description=f"{symbol} - {timeframe} (с {start_date} по {end_date})",
+                value=False,
+                indent=False
+            )
+            self.local_data_checkboxes[(symbol, timeframe)] = cb
+            checkboxes.append(cb)
+        local_data_items_container.children = tuple(checkboxes)
+        # Кнопки и чекбокс подтверждения
+        self.export_local_csv_button = widgets.Button(description='Экспорт в CSV', icon='file-excel', layout=widgets.Layout(width='auto', margin='0 5px 0 0'))
+        self.export_local_parquet_button = widgets.Button(description='Экспорт в Parquet', icon='file-archive', layout=widgets.Layout(width='auto', margin='0 5px 0 0'))
+        self.delete_local_selected_button = widgets.Button(description='Удалить выбранное', button_style='danger', icon='trash', layout=widgets.Layout(width='auto'))
+        self.confirm_delete_local_list_checkbox = widgets.Checkbox(description='Подтверждаю удаление выбранного из списка', value=False, indent=False, layout=widgets.Layout(margin='5px 0'))
+        # Привязка обработчиков
+        self.export_local_csv_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='CSV'))
+        self.export_local_parquet_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='Parquet'))
+        self.delete_local_selected_button.on_click(self._on_delete_local_selected_from_list_clicked)
+        action_buttons_for_local_data = widgets.VBox([
+            widgets.HBox([self.export_local_csv_button, self.export_local_parquet_button]),
+            widgets.HBox([self.delete_local_selected_button, self.confirm_delete_local_list_checkbox])
+        ])
+        # Обновить правую колонку
+        self.local_data_management_area.children = (right_header, local_data_items_container, action_buttons_for_local_data)
 
     def _on_export_local_data_clicked(self, button, export_format: str) -> None:
         """
-        Экспорт выбранных данных в указанный формат.
+        Экспорт выбранных данных в указанный формат (CSV/Parquet) из правой колонки.
         """
         with self.output:
             clear_output(wait=True)
@@ -569,25 +580,27 @@ class DataDownloaderUI:
             if not selected_items:
                 print("Ничего не выбрано для экспорта.")
                 return
-
             exports_dir = os.path.join(self.db_manager.db_directory, 'exports')
             os.makedirs(exports_dir, exist_ok=True)
-
             for symbol, timeframe in selected_items:
-                try:
-                    df = self.db_manager.get_data(symbol, timeframe)
-                    if df is not None and not df.empty:
-                        filename = f"{symbol}_{timeframe}.{export_format.lower()}"
-                        filepath = os.path.join(exports_dir, filename)
+                # Получаем даты для имени файла
+                row = self.current_stored_info[(self.current_stored_info['symbol'] == symbol) & (self.current_stored_info['timeframe'] == timeframe)].iloc[0]
+                start_date_obj = pd.to_datetime(row['start_date'])
+                end_date_obj = pd.to_datetime(row['end_date'])
+                df = self.db_manager.get_data(symbol, timeframe, start_date_obj, end_date_obj)
+                if df is not None и не df.empty:
+                    filename = f"{symbol}_{timeframe}_{start_date_obj.strftime('%Y%m%d')}_{end_date_obj.strftime('%Y%m%d')}.{export_format.lower()}"
+                    filepath = os.path.join(exports_dir, filename)
+                    try:
                         if export_format == 'CSV':
-                            df.to_csv(filepath, index=False)
+                            df.to_csv(filepath, index=True)
                         elif export_format == 'Parquet':
-                            df.to_parquet(filepath, index=False)
+                            df.to_parquet(filepath, index=True)
                         print(f"Экспортировано: {filepath}")
-                    else:
-                        print(f"Нет данных для {symbol} - {timeframe}.")
-                except Exception as e:
-                    print(f"Ошибка экспорта {symbol} - {timeframe}: {e}")
+                    except Exception as e:
+                        print(f"Ошибка экспорта {symbol} - {timeframe}: {e}")
+                else:
+                    print(f"Нет данных для {symbol} - {timeframe}.")
 
     def _on_delete_local_selected_clicked(self, button) -> None:
         """
@@ -612,4 +625,26 @@ class DataDownloaderUI:
                     print(f"Ошибка удаления {symbol} - {timeframe}: {e}")
 
             self.confirm_delete_local_checkbox.value = False
+            print("Операция завершена. Нажмите 'Данные на Диске' для обновления списка.")
+
+    def _on_delete_local_selected_from_list_clicked(self, button) -> None:
+        """
+        Удаление выбранных данных из базы данных (правый список, с подтверждением).
+        """
+        with self.output:
+            clear_output(wait=True)
+            selected_items = [(symbol, timeframe) for (symbol, timeframe), cb in self.local_data_checkboxes.items() if cb.value]
+            if not selected_items:
+                print("Ничего не выбрано для удаления.")
+                return
+            if not self.confirm_delete_local_list_checkbox.value:
+                print("Пожалуйста, подтвердите удаление (отметьте чекбокс).")
+                return
+            for symbol, timeframe in selected_items:
+                try:
+                    self.db_manager.delete_data(symbol, timeframe)
+                    print(f"Удалено: {symbol} - {timeframe}")
+                except Exception as e:
+                    print(f"Ошибка удаления {symbol} - {timeframe}: {e}")
+            self.confirm_delete_local_list_checkbox.value = False
             print("Операция завершена. Нажмите 'Данные на Диске' для обновления списка.")

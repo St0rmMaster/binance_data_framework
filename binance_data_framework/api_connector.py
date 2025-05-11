@@ -48,8 +48,7 @@ class BinanceUSClient:
         # Попытка загрузить недостающие ключи из Google Colab, если используется эта среда
         self._try_load_from_colab_secrets()
         
-        logger.info(f"Инициализирован клиент Binance US API (ключ {'предоставлен' if self._api_key else 'не предоставлен'}, "
-                   f"секрет {'предоставлен' if self._api_secret else 'не предоставлен'})")
+        logger.info("Инициализирован клиент Binance US API.")
         
         self.client = None
     

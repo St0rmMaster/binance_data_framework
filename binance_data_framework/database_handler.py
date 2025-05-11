@@ -31,12 +31,9 @@ class GoogleDriveDataManager:
         if not is_colab:
             raise RuntimeError("ОШИБКА: Фреймворк предназначен для использования ИСКЛЮЧИТЕЛЬНО в среде Google Colab.")
 
-        print("Обнаружена среда Google Colab. Используется Google Drive для хранения БД.")
-
         from google.colab import drive
         drive_mount_point = '/content/drive'
         if not os.path.ismount(drive_mount_point):
-            print(f"Google Drive не смонтирован. Попытка монтирования в {drive_mount_point}...")
             try:
                 drive.mount(drive_mount_point, force_remount=True)
                 print("Google Drive успешно смонтирован.")
@@ -52,11 +49,8 @@ class GoogleDriveDataManager:
 
         try:
             os.makedirs(self.db_directory, exist_ok=True)
-            print(f"Директория для БД '{self.db_directory}' проверена/создана.")
         except OSError as e:
             raise RuntimeError(f"ОШИБКА: Не удалось создать директорию для БД '{self.db_directory}': {e}")
-
-        print(f"Путь к БД на Google Drive: {self.db_path}")
 
         self.conn = None
         self.cursor = None
