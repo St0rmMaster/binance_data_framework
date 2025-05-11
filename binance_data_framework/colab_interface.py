@@ -174,7 +174,7 @@ class DataDownloaderUI:
         self.plot_checkbox.layout = widgets.Layout(width='280px', margin='0 0 8px 0')
         self.load_button.layout = widgets.Layout(width='280px', margin='5px 0')
         self.show_local_button.layout = widgets.Layout(width='280px', margin='5px 0')
-        self.export_data_button.layout = widgets.Layout(width='280px', margin='5px 0')
+        # self.export_data_button.layout = widgets.Layout(width='280px', margin='5px 0')
         # Для правой колонки (локальные данные)
         self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
