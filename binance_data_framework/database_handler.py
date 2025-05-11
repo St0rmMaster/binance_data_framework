@@ -13,36 +13,41 @@ import pandas as pd
 class GoogleDriveDataManager:
     """
     Класс для управления базой данных на Google Drive для хранения исторических данных.
-    Предназначен для работы исключительно в среде Google Colab с Google Drive.
+    Может работать как в среде Google Colab, так и в других средах (локально).
     """
 
     def __init__(self):
         """
         Инициализация менеджера базы данных на Google Drive.
-        Автоматически проверяет среду выполнения и настраивает путь к базе данных на Google Drive.
-        В случае запуска вне Colab выбрасывает исключение.
+        Автоматически проверяет среду выполнения и настраивает путь к базе данных на Google Drive (если Colab).
+        В других средах использует локальный путь.
         """
         try:
             from IPython import get_ipython
             is_colab = 'google.colab' in str(get_ipython())
         except ImportError:
             is_colab = False
+        except NameError:
+            is_colab = False
 
-        if not is_colab:
-            raise RuntimeError("ОШИБКА: Фреймворк предназначен для использования ИСКЛЮЧИТЕЛЬНО в среде Google Colab.")
-
-        from google.colab import drive
-        drive_mount_point = '/content/drive'
-        if not os.path.ismount(drive_mount_point):
+        if is_colab:
             try:
-                drive.mount(drive_mount_point, force_remount=True)
-                print("Google Drive успешно смонтирован.")
-            except Exception as e:
-                raise RuntimeError(f"ОШИБКА: Не удалось смонтировать Google Drive: {e}. Работа фреймворка невозможна.")
+                from google.colab import drive
+                drive_mount_point = '/content/drive'
+                if not os.path.ismount(drive_mount_point):
+                    try:
+                        drive.mount(drive_mount_point, force_remount=True)
+                        print("Google Drive успешно смонтирован.")
+                    except Exception as e:
+                        print(f"ОШИБКА: Не удалось смонтировать Google Drive: {e}. Работа фреймворка невозможна.")
+                else:
+                    print("Google Drive уже смонтирован.")
+                db_parent_directory = '/content/drive/MyDrive/'
+            except Exception:
+                db_parent_directory = os.path.abspath('.')
         else:
-            print("Google Drive уже смонтирован.")
+            db_parent_directory = os.path.abspath('.')
 
-        db_parent_directory = '/content/drive/MyDrive/'
         self.db_directory = os.path.join(db_parent_directory, 'database_binance_framework')
         db_filename = 'binance_ohlcv_data.db'
         self.db_path = os.path.join(self.db_directory, db_filename)
@@ -134,15 +139,15 @@ class GoogleDriveDataManager:
         except Exception as e:
             print(f"Непредвиденная ошибка при инициализации БД на Google Drive: {e}")
 
-    def _timestamp_to_ms(self, dt: datetime) -> int:
+    def _timestamp_to_ms(self, x):
         """
-        Преобразует объект datetime в миллисекунды.
-        Args:
-            dt: Объект datetime
-        Returns:
-            int: Timestamp в миллисекундах
+        Преобразует timestamp (int, float, datetime, pd.Timestamp) в миллисекунды.
         """
-        return int(dt.timestamp() * 1000)
+        if isinstance(x, (int, float)):
+            return int(x)
+        if hasattr(x, 'timestamp'):
+            return int(x.timestamp() * 1000)
+        raise ValueError(f"Неизвестный формат timestamp: {x}")
 
     def _ms_to_datetime(self, ms: int) -> datetime:
         """
@@ -196,6 +201,8 @@ class GoogleDriveDataManager:
             bool: True, если данные успешно сохранены в БД на Google Drive, иначе False
         """
         try:
+            if not symbol or not isinstance(symbol, str) or symbol.strip() == '':
+                raise ValueError("Symbol не должен быть пустым!")
             if df is None or df.empty:
                 return False
             df_to_save = df.copy().reset_index()
@@ -223,6 +230,9 @@ class GoogleDriveDataManager:
             self.conn.commit()
             print(f"Данные успешно сохранены в БД на Google Drive для {symbol}/{timeframe}.")
             return True
+        except ValueError as e:
+            print(f"Ошибка при сохранении данных в БД на Google Drive: {e}")
+            raise
         except sqlite3.IntegrityError:
             print("Ошибка целостности при сохранении данных в БД на Google Drive.")
             return False
