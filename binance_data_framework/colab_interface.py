@@ -141,8 +141,10 @@ class DataDownloaderUI:
         self.delete_data_button.on_click(self._on_delete_data_button_clicked)
         # --- Виджеты для экспорта данных ---
         self.export_format_dropdown = widgets.Dropdown(options=['CSV', 'Parquet'], value='CSV', description='Формат экспорта:', layout=widgets.Layout(width='auto'))
-        self.export_data_button = widgets.Button(description='Экспортировать загруженные данные', button_style='success', icon='save')
-        self.export_data_button.on_click(self._on_export_data_button_clicked)
+        # Не добавляем self.export_data_button в интерфейс, но оставляем инициализацию для обратной совместимости
+        # self.export_data_button = widgets.Button(description='Экспортировать загруженные данные', button_style='success', icon='save')
+        # self.export_data_button.on_click(self._on_export_data_button_clicked)
+        # self.export_data_button.layout = widgets.Layout(width='280px', margin='5px 0')
         # --- Прогресс-бар ---
         self.progress_bar = widgets.FloatProgress(
             value=0.0,
@@ -223,6 +225,7 @@ class DataDownloaderUI:
                 self.progress_bar.layout.visibility = 'hidden'
                 return
             loaded_dataframes = {}
+            summary = []
             for idx, symbol in enumerate(selected_symbols):
                 try:
                     if use_resample and timeframe != '1m':
@@ -230,14 +233,14 @@ class DataDownloaderUI:
                     else:
                         df = self._get_data(symbol, timeframe, start_date, end_date)
                     if df is not None and not df.empty:
-                        print(f"{symbol}: {len(df)} строк.")
                         loaded_dataframes[symbol] = df
+                        summary.append(f"{symbol} — {len(df)} строк")
                         if plot_data:
                             self._plot_data(df, symbol, timeframe)
                     else:
-                        print(f"{symbol}: нет данных.")
+                        summary.append(f"{symbol} — нет данных")
                 except Exception as e:
-                    print(f"Ошибка {symbol}: {e}")
+                    summary.append(f"{symbol} — ошибка: {e}")
                 self.progress_bar.value = (idx + 1) / num_symbols
             self.progress_bar.layout.visibility = 'hidden'
             if loaded_dataframes:
@@ -249,8 +252,9 @@ class DataDownloaderUI:
                 }
             else:
                 self.last_loaded_data_params = {}
-            if self.last_loaded_data_params and self.last_loaded_data_params.get('dataframes'):
-                print("\nДоступ к данным: ui.last_loaded_data_params['dataframes']")
+            if summary:
+                print("Загружено:")
+                print("; ".join(summary))
 
     def _on_delete_data_button_clicked(self, button):
         symbol = self.delete_symbol_input.value.strip()
@@ -311,8 +315,7 @@ class DataDownloaderUI:
             self.use_resample_checkbox,
             self.plot_checkbox,
             self.load_button,
-            self.export_data_button,
-            self.progress_bar  # Переносим прогресс-бар в левый блок
+            self.progress_bar  # Прогресс-бар в левом блоке
         ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
         # Правая колонка: управление локальными данными (заполняется динамически)
@@ -528,14 +531,17 @@ class DataDownloaderUI:
         # Кнопки и чекбокс подтверждения
         self.export_local_csv_button = widgets.Button(description='Экспорт в CSV', icon='file-excel', layout=widgets.Layout(width='auto', margin='0 5px 0 0'))
         self.export_local_parquet_button = widgets.Button(description='Экспорт в Parquet', icon='file-archive', layout=widgets.Layout(width='auto', margin='0 5px 0 0'))
+        self.load_as_current_df_button = widgets.Button(description='Загрузить как текущий датафрейм', icon='table', layout=widgets.Layout(width='auto', margin='0 5px 0 0'))
         self.delete_local_selected_button = widgets.Button(description='Удалить выбранное', button_style='danger', icon='trash', layout=widgets.Layout(width='auto'))
         self.confirm_delete_local_list_checkbox = widgets.Checkbox(description='Подтверждаю удаление выбранного из списка', value=False, indent=False, layout=widgets.Layout(margin='5px 0'))
         # Привязка обработчиков
         self.export_local_csv_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='CSV'))
         self.export_local_parquet_button.on_click(lambda b: self._on_export_local_data_clicked(b, export_format='Parquet'))
+        self.load_as_current_df_button.on_click(self._on_load_as_current_df_clicked)
         self.delete_local_selected_button.on_click(self._on_delete_local_selected_from_list_clicked)
         action_buttons_for_local_data = widgets.VBox([
             widgets.HBox([self.export_local_csv_button, self.export_local_parquet_button]),
+            widgets.HBox([self.load_as_current_df_button]),
             widgets.HBox([self.delete_local_selected_button, self.confirm_delete_local_list_checkbox])
         ])
         # Обновить правую колонку
@@ -599,3 +605,34 @@ class DataDownloaderUI:
             self.confirm_delete_local_list_checkbox.value = False
             # После удаления обновить список
             self._on_show_local_button_clicked(None)
+
+    def _on_load_as_current_df_clicked(self, button) -> None:
+        with self.output:
+            clear_output(wait=True)
+            selected_items = [(symbol, timeframe) for (symbol, timeframe), cb in self.local_data_checkboxes.items() if cb.value]
+            if not selected_items:
+                print("Ничего не выбрано для загрузки.")
+                return
+            # Для одного инструмента — df, для нескольких — dict
+            dfs = {}
+            for symbol, timeframe in selected_items:
+                row = self.current_stored_info[(self.current_stored_info['symbol'] == symbol) & (self.current_stored_info['timeframe'] == timeframe)].iloc[0]
+                start_date_obj = pd.to_datetime(row['start_date'])
+                end_date_obj = pd.to_datetime(row['end_date'])
+                df = self.db_manager.get_data(symbol, timeframe, start_date_obj, end_date_obj)
+                if df is not None and not df.empty:
+                    dfs[(symbol, timeframe)] = df
+            if not dfs:
+                print("Нет данных для выбранных инструментов.")
+                return
+            import builtins
+            if len(dfs) == 1:
+                var_name = 'selected_df'
+                setattr(builtins, var_name, list(dfs.values())[0])
+                info = list(dfs.items())[0]
+                print(f"Загружено: {info[0][0]} {info[0][1]} — {info[1].shape[0]} строк. Датафрейм: selected_df")
+            else:
+                var_name = 'selected_df_dict'
+                setattr(builtins, var_name, dfs)
+                summary = "; ".join([f"{k[0]} {k[1]} — {v.shape[0]} строк" for k, v in dfs.items()])
+                print(f"Загружено: {summary}. Словарь датафреймов: selected_df_dict")
