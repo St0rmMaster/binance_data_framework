@@ -33,4 +33,3 @@ def launch_ui():
     ui = DataDownloaderUI(api_client=api_client, db_manager=db_manager)
     ui.display()
     return ui
-# Контрольные цифры: 12568
