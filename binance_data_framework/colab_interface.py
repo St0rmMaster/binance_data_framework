@@ -58,16 +58,38 @@ class DataDownloaderUI:
         """
         Создает виджеты для интерактивного интерфейса.
         """
-        # Виджет выбора символа (торговой пары)
-        self.symbol_dropdown = widgets.Dropdown(
-            options=self.symbols,
-            value=self.symbols[0] if self.symbols else "BTCUSDT",
-            description='Торговая пара:',
+        # --- Новый блок выбора символов ---
+        self.symbol_filter_input = widgets.Text(
+            value='',
+            description='Фильтр символов:',
             style={'description_width': 'initial'},
-            layout=widgets.Layout(width='50%')
+            layout=widgets.Layout(width='100%')
         )
-        
-        # Виджет выбора таймфрейма
+        self.select_all_symbols_checkbox = widgets.Checkbox(
+            value=False,
+            description='Выбрать/Снять все видимые символы',
+            indent=False
+        )
+        self.symbol_checkboxes_container = widgets.VBox(
+            [],
+            layout=widgets.Layout(
+                max_height='300px',
+                overflow_y='auto',
+                border='1px solid lightgray',
+                padding='5px',
+                width='100%'
+            )
+        )
+        # Словарь всех чекбоксов для символов
+        self.all_symbol_checkbox_widgets = {
+            symbol: widgets.Checkbox(
+                description=symbol,
+                value=False,
+                indent=False,
+                layout=widgets.Layout(width='auto')
+            ) for symbol in self.symbols
+        }
+        # --- Таймфрейм и остальные виджеты ---
         self.timeframe_dropdown = widgets.Dropdown(
             options=self.timeframes,
             value='1h',
@@ -75,31 +97,24 @@ class DataDownloaderUI:
             style={'description_width': 'initial'},
             layout=widgets.Layout(width='50%')
         )
-        
-        # Виджеты для выбора даты начала и конца периода
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)  # По умолчанию 30 дней
-        
+        start_date = end_date - timedelta(days=30)
         self.start_date_picker = widgets.DatePicker(
             description='Дата начала:',
             value=start_date.date(),
             style={'description_width': 'initial'}
         )
-        
         self.end_date_picker = widgets.DatePicker(
             description='Дата конца:',
             value=end_date.date(),
             style={'description_width': 'initial'}
         )
-          # Виджет для опции загрузки минимального таймфрейма и ресемплирования
         self.use_resample_checkbox = widgets.Checkbox(
             value=False,
             description='Ресемплировать из мин. таймфрейма',
             indent=False,
             layout=widgets.Layout(width='50%')
         )
-        
-        # Кнопки для загрузки и отображения данных
         self.load_button = widgets.Button(
             description='Загрузить данные',
             button_style='primary',
@@ -110,69 +125,109 @@ class DataDownloaderUI:
             button_style='info',
             icon='cloud-download'
         )
-        
-        # Виджет для отображения графика
         self.plot_checkbox = widgets.Checkbox(
-            value=False,  # По умолчанию график не показывается
+            value=False,
             description='Показать график',
             indent=False
         )
-        
-        # Виджет для вывода сообщений и результатов
         self.output = widgets.Output()
-        
-        # Настраиваем обработчики событий
+        # --- Привязка обработчиков ---
         self.load_button.on_click(self._on_load_button_clicked)
         self.show_local_button.on_click(self._on_show_local_button_clicked)
-    
+        self.symbol_filter_input.observe(self._update_visible_symbol_checkboxes, names='value')
+        self.select_all_symbols_checkbox.observe(self._on_select_all_toggled, names='value')
+        # --- Инициализация видимых чекбоксов ---
+        self._update_visible_symbol_checkboxes()
+
+    def _update_visible_symbol_checkboxes(self, change=None):
+        """
+        Обновляет список видимых чекбоксов символов согласно фильтру.
+        """
+        filter_text = self.symbol_filter_input.value.strip().lower()
+        visible_checkboxes = []
+        for symbol, cb_widget in self.all_symbol_checkbox_widgets.items():
+            if not filter_text or filter_text in symbol.lower():
+                visible_checkboxes.append(cb_widget)
+        self.symbol_checkboxes_container.children = tuple(visible_checkboxes)
+
+    def _on_select_all_toggled(self, change):
+        """
+        Обработчик для чекбокса "выбрать/снять все видимые символы".
+        """
+        new_value = self.select_all_symbols_checkbox.value
+        for cb_widget in self.symbol_checkboxes_container.children:
+            cb_widget.value = new_value
+
     def _on_load_button_clicked(self, button: widgets.Button) -> None:
         """
-        Обработчик нажатия кнопки "Загрузить данные".
-        
-        Args:
-            button: Объект кнопки
+        Обработчик нажатия кнопки "Загрузить данные" для нескольких символов.
         """
+        selected_symbols = [
+            symbol for symbol, cb_widget in self.all_symbol_checkbox_widgets.items()
+            if cb_widget.value
+        ]
         with self.output:
-            clear_output()
-            
-            # Получаем выбранные значения из виджетов
-            symbol = self.symbol_dropdown.value
+            clear_output(wait=True)
+            if not selected_symbols:
+                print("Ошибка: Ни один символ не выбран. Пожалуйста, выберите хотя бы один символ.")
+                return
             timeframe = self.timeframe_dropdown.value
             start_date = datetime.combine(self.start_date_picker.value, datetime.min.time())
             end_date = datetime.combine(self.end_date_picker.value, datetime.max.time())
-            
             use_resample = self.use_resample_checkbox.value
             plot_data = self.plot_checkbox.value
-            
             if end_date < start_date:
                 print("Ошибка: Дата окончания должна быть позже даты начала")
                 return
-            
-            print(f"Запрос данных для {symbol} на таймфрейме {timeframe} с {start_date.date()} по {end_date.date()}")
-              # Получаем данные
-            if use_resample and timeframe != '1m':
-                # Если выбрано ресемплирование и таймфрейм не 1m
-                df = self._get_resampled_data(symbol, timeframe, start_date, end_date)
-            else:
-                # Стандартная логика получения данных
-                df = self._get_data(symbol, timeframe, start_date, end_date)
-            
-            if df is not None and not df.empty:
-                print(f"\nПолучено {len(df)} строк данных")
-                print("\nПервые 5 строк:")
-                display(df.head())
-                
-                print("\nПоследние 5 строк:")
-                display(df.tail())
-                
-                print("\nИнформация о данных:")
-                df.info()
-                
-                # Отображаем график, если выбрана соответствующая опция
-                if plot_data:
-                    self._plot_data(df, symbol, timeframe)
-            else:
-                print("Данные не получены")
+            for symbol in selected_symbols:
+                print(f"\n--- Обработка символа: {symbol} ---")
+                try:
+                    if use_resample and timeframe != '1m':
+                        df = self._get_resampled_data(symbol, timeframe, start_date, end_date)
+                    else:
+                        df = self._get_data(symbol, timeframe, start_date, end_date)
+                    if df is not None and not df.empty:
+                        print(f"\nПолучено {len(df)} строк данных")
+                        print("\nПервые 5 строк:")
+                        display(df.head())
+                        print("\nПоследние 5 строк:")
+                        display(df.tail())
+                        print("\nИнформация о данных:")
+                        df.info()
+                        if plot_data:
+                            self._plot_data(df, symbol, timeframe)
+                    else:
+                        print("Данные не получены")
+                except Exception as e:
+                    print(f"Ошибка при обработке символа {symbol}: {e}")
+
+    def display(self) -> None:
+        """
+        Отображает интерактивный интерфейс в Jupyter/Colab.
+        """
+        # --- Новый контейнер выбора символов ---
+        symbol_selection_controls = widgets.VBox([
+            self.symbol_filter_input,
+            self.select_all_symbols_checkbox,
+            self.symbol_checkboxes_container
+        ], layout=widgets.Layout(width='40%'))
+        symbol_timeframe_container = widgets.HBox([
+            symbol_selection_controls,
+            self.timeframe_dropdown
+        ])
+        date_container = widgets.HBox([self.start_date_picker, self.end_date_picker])
+        options_container = widgets.HBox([self.use_resample_checkbox, self.plot_checkbox])
+        buttons_container = widgets.HBox([self.load_button, self.show_local_button])
+        main_container = widgets.VBox([
+            widgets.HTML("<h2>Загрузчик данных Binance US</h2>"),
+            symbol_timeframe_container,
+            date_container,
+            options_container,
+            buttons_container,
+            self.output
+        ])
+        display(main_container)
+    
     def _get_data(
         self, 
         symbol: str, 
