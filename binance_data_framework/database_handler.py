@@ -203,31 +203,29 @@ class GoogleDriveDataManager:
         """
         try:
             if df is None or df.empty:
-                print("Нет данных для сохранения в БД на Google Drive.")
                 return False
             df_to_save = df.copy().reset_index()
-            # Преобразуем timestamp в миллисекунды и явно приводим к int (Python int, не numpy)
             df_to_save['timestamp'] = df_to_save['timestamp'].apply(lambda x: int(self._timestamp_to_ms(x)))
             df_to_save['symbol'] = symbol
             df_to_save['timeframe'] = timeframe
             columns_order = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
             df_to_save = df_to_save[columns_order]
-            # Диагностика типов
-            print("[DEBUG save_data] Типы колонок перед сохранением:")
-            print(df_to_save.dtypes)
-            print("[DEBUG save_data] Примеры timestamp:", df_to_save['timestamp'].head().tolist())
-            # Преобразуем к стандартным Python-типам для SQLite (list of lists)
             records = df_to_save.values.tolist()
             self.cursor.executemany(
                 'INSERT OR REPLACE INTO ohlcv_data (timestamp, symbol, timeframe, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 records
             )
-            start_ts = int(df_to_save['timestamp'].min())
-            end_ts = int(df_to_save['timestamp'].max())
             self.cursor.execute(
-                'INSERT OR REPLACE INTO ohlcv_metadata (symbol, timeframe, start_timestamp, end_timestamp) VALUES (?, ?, ?, ?)',
-                (symbol, timeframe, start_ts, end_ts)
+                'SELECT MIN(timestamp), MAX(timestamp) FROM ohlcv_data WHERE symbol=? AND timeframe=?',
+                (symbol, timeframe)
             )
+            row = self.cursor.fetchone()
+            if row and row[0] is not None and row[1] is not None:
+                min_ts, max_ts = int(row[0]), int(row[1])
+                self.cursor.execute(
+                    'INSERT OR REPLACE INTO ohlcv_metadata (symbol, timeframe, start_timestamp, end_timestamp) VALUES (?, ?, ?, ?)',
+                    (symbol, timeframe, min_ts, max_ts)
+                )
             self.conn.commit()
             print(f"Данные успешно сохранены в БД на Google Drive для {symbol}/{timeframe}.")
             return True
@@ -236,6 +234,20 @@ class GoogleDriveDataManager:
             return False
         except Exception as e:
             print(f"Ошибка при сохранении данных в БД на Google Drive: {e}")
+            return False
+
+    def delete_data(self, symbol: str, timeframe: str) -> bool:
+        """
+        Удаляет все данные и метаданные для указанного symbol и timeframe.
+        """
+        try:
+            self.cursor.execute('DELETE FROM ohlcv_data WHERE symbol=? AND timeframe=?', (symbol, timeframe))
+            self.cursor.execute('DELETE FROM ohlcv_metadata WHERE symbol=? AND timeframe=?', (symbol, timeframe))
+            self.conn.commit()
+            print(f"Данные для {symbol}/{timeframe} успешно удалены.")
+            return True
+        except Exception as e:
+            print(f"Ошибка при удалении данных для {symbol}/{timeframe}: {e}")
             return False
 
     def check_data_exists(
@@ -257,11 +269,8 @@ class GoogleDriveDataManager:
                 - bool: True, если данные существуют в БД на Google Drive, иначе False
                 - Optional[Tuple[datetime, datetime]]: Доступный диапазон дат, если данные существуют
         """
-        print(f"\n[DEBUG check_data_exists] Проверка: symbol={symbol}, timeframe={timeframe}")
-        print(f"[DEBUG check_data_exists] Запрошенный период: start={start_date}, end={end_date}")
         start_ms = self._timestamp_to_ms(start_date)
         end_ms = self._timestamp_to_ms(end_date)
-        print(f"[DEBUG check_data_exists] Запрошенный период (ms): start_ms={start_ms}, end_ms={end_ms}")
         try:
             self.cursor.execute(
                 'SELECT start_timestamp, end_timestamp FROM ohlcv_metadata WHERE symbol=? AND timeframe=?',
@@ -270,33 +279,21 @@ class GoogleDriveDataManager:
             result = self.cursor.fetchone()
             if result:
                 meta_start_db, meta_end_db = result
-                print(f"[DEBUG check_data_exists] Найдены метаданные (ms): meta_start_db={meta_start_db}, meta_end_db={meta_end_db}")
                 duration_ms = self._get_timeframe_duration_ms(timeframe)
-                print(f"[DEBUG check_data_exists] Длительность таймфрейма duration_ms={duration_ms}")
                 if duration_ms:
                     actual_coverage_end_ms = meta_end_db + duration_ms - 1
                 else:
                     actual_coverage_end_ms = meta_end_db
-                print(f"[DEBUG check_data_exists] Фактическая правая граница покрытия actual_coverage_end_ms={actual_coverage_end_ms}")
-                # --- PATCH: если end_ms > actual_coverage_end_ms, но actual_coverage_end_ms близок к текущему времени, считаем покрытие полным ---
                 import time
                 now_ms = int(time.time() * 1000)
-                # Если пользователь запрашивает период до будущего времени, а в БД есть все до "сейчас" - считаем покрытие полным
                 if end_ms > actual_coverage_end_ms:
-                    # Если разница между actual_coverage_end_ms и now_ms меньше одного таймфрейма, считаем покрытие полным
                     if abs(now_ms - actual_coverage_end_ms) < duration_ms * 2:
-                        print(f"[DEBUG check_data_exists] Покрытие до текущего момента. Считаем покрытие полным.")
                         return True, (self._ms_to_datetime(meta_start_db), self._ms_to_datetime(meta_end_db))
                 covers_full_period_meta = (meta_start_db <= start_ms and actual_coverage_end_ms >= end_ms)
-                print(f"[DEBUG check_data_exists] Покрытие по метаданным (covers_full_period_meta): {covers_full_period_meta}")
                 if covers_full_period_meta:
-                    print(f"[DEBUG check_data_exists] Возврат: True (по метаданным), диапазон: ({self._ms_to_datetime(meta_start_db)}, {self._ms_to_datetime(meta_end_db)})")
                     return True, (self._ms_to_datetime(meta_start_db), self._ms_to_datetime(meta_end_db))
             else:
-                print(f"[DEBUG check_data_exists] Метаданные для {symbol}/{timeframe} не найдены.")
-                print("[DEBUG check_data_exists] Возврат: False, None (нет метаданных)")
                 return False, None
-            print("[DEBUG check_data_exists] Возврат: False, None (не покрывает период)")
             return False, None
         except sqlite3.Error as e:
             print(f"Ошибка при проверке наличия данных в БД на Google Drive: {e}")
@@ -325,15 +322,12 @@ class GoogleDriveDataManager:
         try:
             start_ms = self._timestamp_to_ms(start_date)
             end_ms = self._timestamp_to_ms(end_date)
-            print(f"[DEBUG get_data] SQL Query Params: symbol={symbol}, timeframe={timeframe}, start_ms={start_ms}, end_ms={end_ms}")
             self.cursor.execute(
                 'SELECT * FROM ohlcv_data WHERE symbol=? AND timeframe=? AND timestamp>=? AND timestamp<=? ORDER BY timestamp ASC',
                 (symbol, timeframe, start_ms, end_ms)
             )
             rows = self.cursor.fetchall()
-            print(f"[DEBUG get_data] Rows fetched from DB: {len(rows)}")
             if not rows:
-                print("Нет данных в БД на Google Drive для указанного периода.")
                 return pd.DataFrame()
             columns = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume']
             df = pd.DataFrame(rows, columns=columns)
@@ -362,12 +356,9 @@ class GoogleDriveDataManager:
                 return pd.DataFrame()
             columns = ['symbol', 'timeframe', 'start_timestamp', 'end_timestamp']
             df = pd.DataFrame(rows, columns=columns)
-            # Преобразуем start_timestamp и end_timestamp в читаемые даты
             df['start_date'] = pd.to_datetime(df['start_timestamp'], unit='ms')
             df['end_date'] = pd.to_datetime(df['end_timestamp'], unit='ms')
-            # Для удобства отображения переместим новые колонки вперед
             df = df[['symbol', 'timeframe', 'start_date', 'end_date', 'start_timestamp', 'end_timestamp']]
-            # Проверка типов timestamp в ohlcv_data
             self.cursor.execute("SELECT DISTINCT typeof(timestamp) FROM ohlcv_data LIMIT 10;")
             types = self.cursor.fetchall()
             if types and any(t[0] != 'integer' for t in types):

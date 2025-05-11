@@ -11,6 +11,7 @@ from IPython.display import display, clear_output
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from typing import Optional, List, Dict, Any, Tuple, Union
+import os
 
 from binance_data_framework.api_connector import BinanceUSClient
 from binance_data_framework.database_handler import GoogleDriveDataManager
@@ -31,6 +32,7 @@ class DataDownloaderUI:
         """
         self.api_client = api_client
         self.db_manager = db_manager
+        self.last_loaded_data_params = {}
         
         # Инициализация виджетов
         self.symbols = []
@@ -131,6 +133,26 @@ class DataDownloaderUI:
             indent=False
         )
         self.output = widgets.Output()
+        # --- Виджеты для удаления данных ---
+        self.delete_symbol_input = widgets.Text(description='Символ для удаления:', layout=widgets.Layout(width='auto'))
+        self.delete_timeframe_input = widgets.Text(description='Таймфрейм для удаления:', layout=widgets.Layout(width='auto'))
+        self.confirm_delete_checkbox = widgets.Checkbox(description='Я подтверждаю удаление этих данных', value=False, indent=False)
+        self.delete_data_button = widgets.Button(description='Удалить данные из БД', button_style='danger', icon='trash')
+        self.delete_data_button.on_click(self._on_delete_data_button_clicked)
+        # --- Виджеты для экспорта данных ---
+        self.export_format_dropdown = widgets.Dropdown(options=['CSV', 'Parquet'], value='CSV', description='Формат экспорта:', layout=widgets.Layout(width='auto'))
+        self.export_data_button = widgets.Button(description='Экспортировать загруженные данные', button_style='success', icon='save')
+        self.export_data_button.on_click(self._on_export_data_button_clicked)
+        # --- Прогресс-бар ---
+        self.progress_bar = widgets.FloatProgress(
+            value=0.0,
+            min=0.0,
+            max=1.0,
+            description='Прогресс:',
+            bar_style='info',
+            orientation='horizontal',
+            layout=widgets.Layout(width='95%', visibility='hidden')
+        )
         # --- Привязка обработчиков ---
         self.load_button.on_click(self._on_load_button_clicked)
         self.show_local_button.on_click(self._on_show_local_button_clicked)
@@ -168,6 +190,14 @@ class DataDownloaderUI:
         ]
         with self.output:
             clear_output(wait=True)
+            num_symbols = len(selected_symbols)
+            if num_symbols > 0:
+                self.progress_bar.value = 0.0
+                self.progress_bar.max = float(num_symbols)
+                self.progress_bar.description = f'0/{num_symbols}'
+                self.progress_bar.layout.visibility = 'visible'
+            else:
+                self.progress_bar.layout.visibility = 'hidden'
             if not selected_symbols:
                 print("Ошибка: Ни один символ не выбран. Пожалуйста, выберите хотя бы один символ.")
                 return
@@ -178,34 +208,99 @@ class DataDownloaderUI:
             plot_data = self.plot_checkbox.value
             if end_date < start_date:
                 print("Ошибка: Дата окончания должна быть позже даты начала")
+                self.progress_bar.layout.visibility = 'hidden'
                 return
-            for symbol in selected_symbols:
-                print(f"\n--- Обработка символа: {symbol} ---")
+            loaded_dataframes = {}
+            for idx, symbol in enumerate(selected_symbols):
                 try:
                     if use_resample and timeframe != '1m':
                         df = self._get_resampled_data(symbol, timeframe, start_date, end_date)
                     else:
                         df = self._get_data(symbol, timeframe, start_date, end_date)
                     if df is not None and not df.empty:
-                        print(f"\nПолучено {len(df)} строк данных")
-                        print("\nПервые 5 строк:")
-                        display(df.head())
-                        print("\nПоследние 5 строк:")
-                        display(df.tail())
-                        print("\nИнформация о данных:")
-                        df.info()
+                        print(f"{symbol}: Загружено {len(df)} строк.")
+                        loaded_dataframes[symbol] = df
                         if plot_data:
                             self._plot_data(df, symbol, timeframe)
                     else:
-                        print("Данные не получены")
+                        print(f"{symbol}: Данные не получены.")
                 except Exception as e:
                     print(f"Ошибка при обработке символа {symbol}: {e}")
+                self.progress_bar.value += 1.0
+                self.progress_bar.description = f'{int(self.progress_bar.value)}/{num_symbols}'
+            if loaded_dataframes:
+                self.last_loaded_data_params = {
+                    'timeframe': timeframe,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'dataframes': loaded_dataframes
+                }
+            else:
+                self.last_loaded_data_params = {}
+            if num_symbols > 0:
+                self.progress_bar.description = 'Завершено'
+            else:
+                self.progress_bar.layout.visibility = 'hidden'
+
+    def _on_delete_data_button_clicked(self, button):
+        symbol = self.delete_symbol_input.value.strip()
+        timeframe = self.delete_timeframe_input.value.strip()
+        with self.output:
+            clear_output(wait=True)
+            if not symbol or not timeframe:
+                print("Пожалуйста, укажите символ и таймфрейм для удаления.")
+                return
+            if not self.confirm_delete_checkbox.value:
+                print("Пожалуйста, подтвердите удаление.")
+                return
+            result = self.db_manager.delete_data(symbol, timeframe)
+            if result:
+                print(f"Данные для {symbol}/{timeframe} успешно удалены.")
+            else:
+                print(f"Ошибка при удалении данных для {symbol}/{timeframe}.")
+            self.confirm_delete_checkbox.value = False
+            print("Для обновления информации нажмите 'Данные на Диске'.")
+
+    def _on_export_data_button_clicked(self, button):
+        with self.output:
+            clear_output(wait=True)
+            params = self.last_loaded_data_params
+            if not params or 'dataframes' not in params or not params['dataframes']:
+                print("Нет данных для экспорта. Сначала загрузите данные.")
+                return
+            export_format = self.export_format_dropdown.value
+            timeframe = params.get('timeframe')
+            start_date = params.get('start_date')
+            end_date = params.get('end_date')
+            exports_dir = os.path.join(self.db_manager.db_directory, 'exports')
+            os.makedirs(exports_dir, exist_ok=True)
+            for symbol, df in params['dataframes'].items():
+                filename = f"{symbol}_{timeframe}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.{export_format.lower()}"
+                filepath = os.path.join(exports_dir, filename)
+                try:
+                    if export_format == 'CSV':
+                        df.to_csv(filepath, index=True)
+                    elif export_format == 'Parquet':
+                        df.to_parquet(filepath, index=True)
+                    print(f"Экспортировано: {filepath}")
+                except Exception as e:
+                    print(f"Ошибка экспорта {symbol}: {e}")
 
     def display(self) -> None:
         """
         Отображает интерактивный интерфейс в Jupyter/Colab.
         """
-        # --- Новый контейнер выбора символов ---
+        export_controls_box = widgets.HBox([
+            self.export_format_dropdown,
+            self.export_data_button
+        ], layout=widgets.Layout(margin='10px 0 0 0'))
+        delete_controls_box = widgets.VBox([
+            widgets.HTML("<h4>Управление данными в БД:</h4>"),
+            self.delete_symbol_input,
+            self.delete_timeframe_input,
+            self.confirm_delete_checkbox,
+            self.delete_data_button
+        ], layout=widgets.Layout(margin='10px 0 0 0'))
         symbol_selection_controls = widgets.VBox([
             self.symbol_filter_input,
             self.select_all_symbols_checkbox,
@@ -224,6 +319,9 @@ class DataDownloaderUI:
             date_container,
             options_container,
             buttons_container,
+            export_controls_box,
+            delete_controls_box,
+            self.progress_bar,
             self.output
         ])
         display(main_container)
@@ -407,20 +505,14 @@ class DataDownloaderUI:
             button: Объект кнопки
         """
         with self.output:
-            clear_output()
+            clear_output(wait=True)
             print("Запрос информации о данных на Google Drive...")
             stored_info = self.db_manager.get_stored_info()
             if stored_info is None or stored_info.empty:
                 print("В БД на Google Drive нет сохраненных данных")
                 return
-            print("\nДоступные данные в БД на Google Drive:")
-            # Выводим только читаемые даты и основные поля
+            print(f"Доступно {len(stored_info)} записей в БД.")
             display(stored_info[['symbol', 'timeframe', 'start_date', 'end_date']])
             unique_symbols = stored_info['symbol'].unique()
             unique_timeframes = stored_info['timeframe'].unique()
-            print(f"\nВсего уникальных символов: {len(unique_symbols)}")
-            print(f"Всего уникальных таймфреймов: {len(unique_timeframes)}")
-            print("\nСписок символов:")
-            print(", ".join(unique_symbols))
-            print("\nСписок таймфреймов:")
-            print(", ".join(unique_timeframes))
+            print(f"Уникальных символов: {len(unique_symbols)} | Уникальных таймфреймов: {len(unique_timeframes)}")
