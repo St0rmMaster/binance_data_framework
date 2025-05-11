@@ -205,7 +205,7 @@ class DataDownloaderUI:
         with self.output:
             clear_output(wait=True)
             num_symbols = len(selected_symbols)
-            if num_symbols > 0:
+            if (num_symbols > 0):
                 self.progress_bar.value = 0.0
                 self.progress_bar.max = float(num_symbols)
                 self.progress_bar.layout.visibility = 'visible'
@@ -515,7 +515,7 @@ class DataDownloaderUI:
         # Заголовок
         right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
         # Прокручиваемый список чекбоксов
-        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='520px', max_height='400px', overflow_y='auto', border='1px solid lightgray', padding='5px', margin='0 0 10px 0'))
+        local_data_items_container = widgets.VBox(layout=widgets.Layout(width='100%', min_width='480px', max_width='none', max_height='400px', overflow_y='auto', overflow_x='hidden', border='1px solid lightgray', padding='5px', margin='0 0 10px 0', box_sizing='border-box', display='block'))
         self.local_data_checkboxes = {}
         checkboxes = []
         for _, row in stored_info.iterrows():
@@ -613,26 +613,20 @@ class DataDownloaderUI:
             if not selected_items:
                 print("Ничего не выбрано для загрузки.")
                 return
-            # Для одного инструмента — df, для нескольких — dict
-            dfs = {}
-            for symbol, timeframe in selected_items:
-                row = self.current_stored_info[(self.current_stored_info['symbol'] == symbol) & (self.current_stored_info['timeframe'] == timeframe)].iloc[0]
-                start_date_obj = pd.to_datetime(row['start_date'])
-                end_date_obj = pd.to_datetime(row['end_date'])
-                df = self.db_manager.get_data(symbol, timeframe, start_date_obj, end_date_obj)
-                if df is not None and not df.empty:
-                    dfs[(symbol, timeframe)] = df
-            if not dfs:
-                print("Нет данных для выбранных инструментов.")
+            if len(selected_items) > 1:
+                print("Пожалуйста, выберите только один инструмент для загрузки как текущий датафрейм.")
                 return
-            import builtins
-            if len(dfs) == 1:
-                var_name = 'selected_df'
-                setattr(builtins, var_name, list(dfs.values())[0])
-                info = list(dfs.items())[0]
-                print(f"Загружено: {info[0][0]} {info[0][1]} — {info[1].shape[0]} строк. Датафрейм: selected_df")
+            symbol, timeframe = selected_items[0]
+            row = self.current_stored_info[(self.current_stored_info['symbol'] == symbol) & (self.current_stored_info['timeframe'] == timeframe)].iloc[0]
+            start_date_obj = pd.to_datetime(row['start_date'])
+            end_date_obj = pd.to_datetime(row['end_date'])
+            df = self.db_manager.get_data(symbol, timeframe, start_date_obj, end_date_obj)
+            if df is not None and not df.empty:
+                globals()['selected_df'] = df
+                print(f"Загружено в переменную selected_df: {symbol} {timeframe} ({len(df)} строк)")
+                print("Первые 5 строк:")
+                display(df.head())
+                print("Последние 5 строк:")
+                display(df.tail())
             else:
-                var_name = 'selected_df_dict'
-                setattr(builtins, var_name, dfs)
-                summary = "; ".join([f"{k[0]} {k[1]} — {v.shape[0]} строк" for k, v in dfs.items()])
-                print(f"Загружено: {summary}. Словарь датафреймов: selected_df_dict")
+                print(f"Нет данных для {symbol} - {timeframe}.")
