@@ -144,7 +144,6 @@ class DataDownloaderUI:
         # Не добавляем self.export_data_button в интерфейс, но оставляем инициализацию для обратной совместимости
         # self.export_data_button = widgets.Button(description='Экспортировать загруженные данные', button_style='success', icon='save')
         # self.export_data_button.on_click(self._on_export_data_button_clicked)
-        # self.export_data_button.layout = widgets.Layout(width='280px', margin='5px 0')
         # --- Прогресс-бар ---
         self.progress_bar = widgets.FloatProgress(
             value=0.0,
@@ -320,13 +319,13 @@ class DataDownloaderUI:
 
         # Правая колонка: управление локальными данными (заполняется динамически)
         if not hasattr(self, 'local_data_management_area'):
-            self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
+            self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='420px', padding='10px', align_items='flex-start'))
 
         # Кнопка "Данные на Диске" теперь в правой колонке
         right_column = widgets.VBox([
             self.show_local_button,
             self.local_data_management_area
-        ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
+        ], layout=widgets.Layout(width='420px', padding='10px', align_items='flex-start'))
 
         main_controls_layout = widgets.HBox([
             left_column,
