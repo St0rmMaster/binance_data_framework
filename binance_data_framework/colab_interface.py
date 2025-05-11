@@ -424,26 +424,3 @@ class DataDownloaderUI:
             print(", ".join(unique_symbols))
             print("\nСписок таймфреймов:")
             print(", ".join(unique_timeframes))
-    
-    def display(self) -> None:
-        """
-        Отображает интерактивный интерфейс в Jupyter/Colab.
-        """
-        # Создаем контейнеры для группировки виджетов
-        symbol_timeframe_container = widgets.HBox([self.symbol_dropdown, self.timeframe_dropdown])
-        date_container = widgets.HBox([self.start_date_picker, self.end_date_picker])
-        options_container = widgets.HBox([self.use_resample_checkbox, self.plot_checkbox])
-        buttons_container = widgets.HBox([self.load_button, self.show_local_button])
-        
-        # Компонуем все виджеты в вертикальный контейнер
-        main_container = widgets.VBox([
-            widgets.HTML("<h2>Загрузчик данных Binance US</h2>"),
-            symbol_timeframe_container,
-            date_container,
-            options_container,
-            buttons_container,
-            self.output
-        ])
-        
-        # Отображаем главный контейнер
-        display(main_container)
