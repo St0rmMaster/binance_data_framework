@@ -357,8 +357,7 @@ class GoogleDriveDataManager:
             types = self.cursor.fetchall()
             if types and any(t[0] != 'integer' for t in types):
                 print(f"❌ ВНИМАНИЕ: В таблице ohlcv_data обнаружены некорректные типы timestamp: {types}. Рекомендуется пересоздать таблицу.")
-            else:
-                print("✅ Все значения timestamp в ohlcv_data имеют тип integer.")
+            # print("✅ Все значения timestamp в ohlcv_data имеют тип integer.")
             return df
         except sqlite3.Error as e:
             print(f"Ошибка при получении информации о сохраненных данных в БД на Google Drive: {e}")
