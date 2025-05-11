@@ -588,7 +588,7 @@ class DataDownloaderUI:
                 start_date_obj = pd.to_datetime(row['start_date'])
                 end_date_obj = pd.to_datetime(row['end_date'])
                 df = self.db_manager.get_data(symbol, timeframe, start_date_obj, end_date_obj)
-                if df is not None и не df.empty:
+                if df is not None and not df.empty:
                     filename = f"{symbol}_{timeframe}_{start_date_obj.strftime('%Y%m%d')}_{end_date_obj.strftime('%Y%m%d')}.{export_format.lower()}"
                     filepath = os.path.join(exports_dir, filename)
                     try:
