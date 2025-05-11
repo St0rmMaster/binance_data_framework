@@ -151,7 +151,7 @@ class DataDownloaderUI:
             description='Прогресс:',
             bar_style='info',
             orientation='horizontal',
-            layout=widgets.Layout(width='95%', visibility='hidden')
+            layout=widgets.Layout(width='280px', height='16px', margin='5px 0', visibility='hidden')
         )
         # --- Привязка обработчиков ---
         self.load_button.on_click(self._on_load_button_clicked)
@@ -197,9 +197,6 @@ class DataDownloaderUI:
             cb_widget.value = new_value
 
     def _on_load_button_clicked(self, button: widgets.Button) -> None:
-        """
-        Обработчик нажатия кнопки "Загрузить данные" для нескольких символов.
-        """
         selected_symbols = [
             symbol for symbol, cb_widget in self.all_symbol_checkbox_widgets.items()
             if cb_widget.value
@@ -210,12 +207,11 @@ class DataDownloaderUI:
             if num_symbols > 0:
                 self.progress_bar.value = 0.0
                 self.progress_bar.max = float(num_symbols)
-                self.progress_bar.description = f'0/{num_symbols}'
                 self.progress_bar.layout.visibility = 'visible'
             else:
                 self.progress_bar.layout.visibility = 'hidden'
             if not selected_symbols:
-                print("Ошибка: Ни один символ не выбран. Пожалуйста, выберите хотя бы один символ.")
+                print("Ошибка: Ни один символ не выбран.")
                 return
             timeframe = self.timeframe_dropdown.value
             start_date = datetime.combine(self.start_date_picker.value, datetime.min.time())
@@ -234,16 +230,16 @@ class DataDownloaderUI:
                     else:
                         df = self._get_data(symbol, timeframe, start_date, end_date)
                     if df is not None and not df.empty:
-                        print(f"{symbol}: Загружено {len(df)} строк.")
+                        print(f"{symbol}: {len(df)} строк.")
                         loaded_dataframes[symbol] = df
                         if plot_data:
                             self._plot_data(df, symbol, timeframe)
                     else:
-                        print(f"{symbol}: Данные не получены.")
+                        print(f"{symbol}: нет данных.")
                 except Exception as e:
-                    print(f"Ошибка при обработке символа {symbol}: {e}")
-                self.progress_bar.value += 1.0
-                self.progress_bar.description = f'{int(self.progress_bar.value)}/{num_symbols}'
+                    print(f"Ошибка {symbol}: {e}")
+                self.progress_bar.value = (idx + 1) / num_symbols
+            self.progress_bar.layout.visibility = 'hidden'
             if loaded_dataframes:
                 self.last_loaded_data_params = {
                     'timeframe': timeframe,
@@ -253,21 +249,8 @@ class DataDownloaderUI:
                 }
             else:
                 self.last_loaded_data_params = {}
-            if num_symbols > 0:
-                self.progress_bar.description = 'Завершено'
-            else:
-                self.progress_bar.layout.visibility = 'hidden'
-            # --- Информация о доступе к данным ---
             if self.last_loaded_data_params and self.last_loaded_data_params.get('dataframes'):
-                print("\n--- Доступ к загруженным данным ---")
-                print("Вы можете получить доступ к загруженным DataFrame через атрибут 'last_loaded_data_params':")
-                print("Например, для первого загруженного символа:")
-                print("  df_dict = ui.last_loaded_data_params['dataframes']")
-                print("  first_symbol = list(df_dict.keys())[0]")
-                print("  my_dataframe = df_dict[first_symbol]")
-                print("Или перебрать все загруженные:")
-                print("  for symbol, df in ui.last_loaded_data_params['dataframes'].items():")
-                print("      # ваша обработка df для symbol")
+                print("\nДоступ к данным: ui.last_loaded_data_params['dataframes']")
 
     def _on_delete_data_button_clicked(self, button):
         symbol = self.delete_symbol_input.value.strip()
@@ -314,11 +297,7 @@ class DataDownloaderUI:
                     print(f"Ошибка экспорта {symbol}: {e}")
 
     def display(self) -> None:
-        """
-        Отображает интерактивный интерфейс в Jupyter/Colab.
-        """
-        clear_output(wait=True)  # Окончательная очистка вывода
-
+        clear_output(wait=True)
         # Левая колонка: загрузка новых данных
         left_column = widgets.VBox([
             widgets.HTML("<h4>Параметры загрузки:</h4>"),
@@ -332,27 +311,32 @@ class DataDownloaderUI:
             self.use_resample_checkbox,
             self.plot_checkbox,
             self.load_button,
-            self.export_data_button
+            self.export_data_button,
+            self.progress_bar  # Переносим прогресс-бар в левый блок
         ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
         # Правая колонка: управление локальными данными (заполняется динамически)
         if not hasattr(self, 'local_data_management_area'):
             self.local_data_management_area = widgets.VBox([], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
 
+        # Кнопка "Данные на Диске" теперь в правой колонке
+        right_column = widgets.VBox([
+            self.show_local_button,
+            self.local_data_management_area
+        ], layout=widgets.Layout(width='auto', padding='10px', align_items='flex-start'))
+
         main_controls_layout = widgets.HBox([
             left_column,
-            self.local_data_management_area
+            right_column
         ])
 
         main_container = widgets.VBox([
             widgets.HTML("<h2>Загрузчик данных Binance US</h2>"),
-            self.show_local_button,
             main_controls_layout,
-            self.progress_bar,
             self.output
         ])
         display(main_container)
-    
+
     def _get_data(
         self, 
         symbol: str, 
@@ -372,31 +356,18 @@ class DataDownloaderUI:
         Returns:
             pd.DataFrame: DataFrame с данными или None в случае ошибки
         """
-        # Диагностические сообщения перед проверкой наличия данных
-        print(f"\n[DEBUG _get_data] Вызов check_data_exists для: symbol={symbol}, timeframe={timeframe}")
-        print(f"[DEBUG _get_data] Период: start_date={start_date}, end_date={end_date}")
-        
-        # Проверяем наличие данных в БД на Google Drive
         data_exists, date_range = self.db_manager.check_data_exists(symbol, timeframe, start_date, end_date)
-        
-        # Диагностические сообщения после проверки
-        print(f"[DEBUG _get_data] Результат check_data_exists: data_exists={data_exists}, date_range={date_range}")
-        
         if data_exists:
-            print(f"Данные найдены в БД на Google Drive для {symbol} на таймфрейме {timeframe} в указанном периоде")
+            print(f"Данные найдены в БД для {symbol} {timeframe}")
             df = self.db_manager.get_data(symbol, timeframe, start_date, end_date)
             return df
-        
-        # Запрашиваем данные из API
-        print(f"Загрузка данных из API для {symbol} на таймфрейме {timeframe}")
+        print(f"Загрузка из API: {symbol} {timeframe}")
         df = self.api_client.get_historical_data(symbol, timeframe, start_date, end_date)
-        
         if df is not None and not df.empty:
-            # Сохраняем полученные данные в БД
-            print("Сохранение данных в БД на Google Drive...")
+            print("Сохранение в БД...")
             self.db_manager.save_data(df, symbol, timeframe)
-        
         return df
+
     def _get_resampled_data(
         self, 
         symbol: str, 
@@ -536,7 +507,7 @@ class DataDownloaderUI:
         self.current_stored_info = stored_info  # Для экспорта/удаления
         if stored_info.empty:
             with self.output:
-                print("Нет данных в базе данных на Google Drive.")
+                print("Нет данных на Google Drive.")
             return
         # Заголовок
         right_header = widgets.HTML("<h4>Данные на Google Drive:</h4>")
@@ -583,7 +554,6 @@ class DataDownloaderUI:
             exports_dir = os.path.join(self.db_manager.db_directory, 'exports')
             os.makedirs(exports_dir, exist_ok=True)
             for symbol, timeframe in selected_items:
-                # Получаем даты для имени файла
                 row = self.current_stored_info[(self.current_stored_info['symbol'] == symbol) & (self.current_stored_info['timeframe'] == timeframe)].iloc[0]
                 start_date_obj = pd.to_datetime(row['start_date'])
                 end_date_obj = pd.to_datetime(row['end_date'])
@@ -603,29 +573,9 @@ class DataDownloaderUI:
                     print(f"Нет данных для {symbol} - {timeframe}.")
 
     def _on_delete_local_selected_clicked(self, button) -> None:
-        """
-        Удаление выбранных данных из базы данных.
-        """
         with self.output:
             clear_output(wait=True)
-            selected_items = [(symbol, timeframe) for (symbol, timeframe), cb in self.local_data_checkboxes.items() if cb.value]
-            if not selected_items:
-                print("Ничего не выбрано для удаления.")
-                return
-
-            if not self.confirm_delete_local_checkbox.value:
-                print("Пожалуйста, подтвердите удаление.")
-                return
-
-            for symbol, timeframe in selected_items:
-                try:
-                    self.db_manager.delete_data(symbol, timeframe)
-                    print(f"Удалено: {symbol} - {timeframe}")
-                except Exception as e:
-                    print(f"Ошибка удаления {symbol} - {timeframe}: {e}")
-
-            self.confirm_delete_local_checkbox.value = False
-            print("Операция завершена. Нажмите 'Данные на Диске' для обновления списка.")
+            print("Удаление через этот способ больше не поддерживается. Используйте удаление через правый блок.")
 
     def _on_delete_local_selected_from_list_clicked(self, button) -> None:
         """
@@ -647,4 +597,5 @@ class DataDownloaderUI:
                 except Exception as e:
                     print(f"Ошибка удаления {symbol} - {timeframe}: {e}")
             self.confirm_delete_local_list_checkbox.value = False
-            print("Операция завершена. Нажмите 'Данные на Диске' для обновления списка.")
+            # После удаления обновить список
+            self._on_show_local_button_clicked(None)
