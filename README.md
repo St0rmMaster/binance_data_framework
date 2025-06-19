@@ -1,176 +1,299 @@
-# Binance US Data Framework
+# LeviafanDL - Universal Financial Data Framework
 
-**Binance US Data Framework** — это инструмент для удобной загрузки, хранения, анализа и экспорта исторических данных с Binance US. Фреймворк оптимизирован для работы в Google Colab, поддерживает кэширование в Google Drive, визуализацию, экспорт, ресемплирование и полностью интерактивный UI.
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](https://github.com/leviafandl/LeviafanDL)
 
----
+**LeviafanDL** is a comprehensive Python framework for downloading, processing, and managing financial data from multiple sources. It provides unified access to Forex, cryptocurrency, stock, and commodity data with intelligent caching and flexible storage options.
 
-## Возможности
+## 🚀 Key Features
 
-- **Загрузка исторических OHLCV-данных** с Binance US API по выбранным символам и таймфреймам.
-- **Локальное хранение** данных в SQLite-базе на Google Drive (или локально).
-- **Интерактивный UI** для Google Colab: выбор символов, таймфреймов, дат, фильтрация, массовая загрузка.
-- **Ресемплирование**: агрегация данных из меньших таймфреймов в большие.
-- **Экспорт** выбранных данных в CSV и Parquet.
-- **Удаление** данных из базы через UI.
-- **Визуализация**: быстрый просмотр графика цены и объема.
-- **Кэширование**: повторное использование уже загруженных данных.
-- **Программный доступ**: получение данных напрямую из Python-кода.
-- **Безопасная работа с API-ключами** в Colab.
-- **Автоматическое определение и отображение доступных данных в базе**.
-- **Загрузка выбранного набора данных как текущего DataFrame для анализа**.
+### Multi-Source Data Access
+- **Dukascopy**: Forex, CFDs, commodities, indices, and cryptocurrency data with tick-level precision
+- **Binance**: Comprehensive cryptocurrency market data
+- **Automatic Source Selection**: Intelligent prioritization (Dukascopy preferred, Binance fallback)
 
----
+### Advanced Data Types
+- **OHLCV Bar Data**: Multiple timeframes from 1 minute to 1 month
+- **Tick Data**: High-frequency bid/ask data (Dukascopy)
+- **Smart Resampling**: Automatic tick-to-bar conversion when beneficial
 
-## Установка
+### Flexible Storage Backends
+- **Local Storage**: High-performance DuckDB for local data storage
+- **Google Drive**: Cloud storage integration (coming soon)
+- **FTP Storage**: Remote server storage (coming soon)
 
-### В Google Colab
+### Environment Adaptability
+- **Google Colab**: Automatic detection and integration with Colab secrets
+- **Local Development**: `.env` file support for configuration
+- **Cross-Platform**: Windows, macOS, and Linux support
 
-```python
-!pip install --no-cache-dir --upgrade git+https://github.com/St0rmMaster/binance_data_framework.git
+## 📦 Installation
+
+### Basic Installation
+```bash
+pip install leviafan-dl
 ```
 
-### Локальная установка
-
+### Development Installation
 ```bash
-pip install --upgrade git+https://github.com/St0rmMaster/binance_data_framework.git
-```
-
-### Для разработки
-
-```bash
-git clone https://github.com/St0rmMaster/binance_data_framework.git
-cd binance_data_framework
+git clone https://github.com/leviafandl/LeviafanDL.git
+cd LeviafanDL
 pip install -e .
 ```
 
----
-
-## Быстрый старт: Google Colab UI
-
-```python
-from binance_data_framework import launch_ui
-
-# Запуск интерактивного интерфейса (Colab)
-ui = launch_ui()
+### Install with Development Tools
+```bash
+pip install leviafan-dl[dev]
 ```
 
-**Возможности UI:**
-- Выбор таймфрейма, фильтрация и массовый выбор символов.
-- Задание периода загрузки.
-- Ресемплирование и визуализация.
-- Просмотр и экспорт уже загруженных данных.
-- Удаление выбранных данных.
-- Загрузка выбранного набора как переменной `selected_df` с предпросмотром (head/tail).
+## 🔧 Configuration
 
----
+### Environment Variables (.env file)
+Create a `.env` file in your project directory:
 
-## Пример работы с UI
+```env
+# Binance API Configuration
+BINANCE_API_KEY=your_api_key_here
+BINANCE_API_SECRET=your_api_secret_here
 
-```python
-# После загрузки данных через UI:
-# Получить доступ к последним загруженным DataFrame:
-df_dict = ui.last_loaded_data_params['dataframes']
-first_symbol = list(df_dict.keys())[0]
-my_dataframe = df_dict[first_symbol]
+# Local Storage Configuration  
+LOCAL_STORAGE_PATH=./data
+LOCAL_DB_NAME=leviafan_data.duckdb
+
+# Dukascopy Configuration (optional)
+DUKASCOPY_TIMEOUT=30
+DUKASCOPY_RETRIES=3
 ```
 
----
+### Google Colab Setup
+In Google Colab, add your API keys to Colab Secrets:
+- `BINANCE_API_KEY`
+- `BINANCE_API_SECRET`
 
-## Пример программного использования (без UI)
+## 🎯 Quick Start
+
+### Basic Usage
 
 ```python
-from binance_data_framework import BinanceUSClient, GoogleDriveDataManager
+from leviafan_dl import DataManager
 from datetime import datetime, timedelta
 
-api_client = BinanceUSClient()
-db_manager = GoogleDriveDataManager()
+# Initialize the data manager
+data_manager = DataManager(storage_type='local')
 
-symbol = 'BTCUSDT'
-timeframe = '1h'
+# Define date range
 end_date = datetime.now()
-start_date = end_date - timedelta(days=30)
+start_date = end_date - timedelta(days=7)
 
-# Проверка наличия данных в базе
-data_exists, date_range = db_manager.check_data_exists(symbol, timeframe, start_date, end_date)
+# Fetch Forex data (automatically uses Dukascopy)
+forex_data = data_manager.fetch_data(
+    symbol='EURUSD',
+    start_date=start_date,
+    end_date=end_date,
+    timeframe='1h',
+    data_type='bars'
+)
 
-if data_exists:
-    df = db_manager.get_data(symbol, timeframe, start_date, end_date)
-else:
-    df = api_client.get_historical_data(symbol, timeframe, start_date, end_date)
-    if not df.empty:
-        db_manager.save_data(df, symbol, timeframe)
+# Fetch cryptocurrency data (automatically uses Binance)
+crypto_data = data_manager.fetch_data(
+    symbol='BTCUSDT', 
+    start_date=start_date,
+    end_date=end_date,
+    timeframe='1h',
+    data_type='bars'
+)
 
-# Анализ и визуализация
-if not df.empty:
-    print(df.head())
-    df['SMA_20'] = df['close'].rolling(window=20).mean()
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df['close'], label='Close')
-    plt.plot(df.index, df['SMA_20'], label='SMA 20')
-    plt.title(f'{symbol} - {timeframe}')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+# Fetch tick data (Dukascopy only)
+tick_data = data_manager.fetch_data(
+    symbol='EURUSD',
+    start_date=datetime.now() - timedelta(hours=2),
+    end_date=datetime.now(),
+    timeframe='tick',
+    data_type='ticks'
+)
+
+print(f"Forex data: {len(forex_data)} bars")
+print(f"Crypto data: {len(crypto_data)} bars") 
+print(f"Tick data: {len(tick_data)} ticks")
 ```
 
----
-
-## Безопасное хранение API-ключей в Google Colab
+### Advanced Configuration
 
 ```python
-from google.colab import userdata
+from leviafan_dl import DataManager, ConfigManager
 
-api_key = userdata.get('BINANCE_US_API_KEY')
-api_secret = userdata.get('BINANCE_US_API_SECRET')
-api_client = BinanceUSClient(api_key=api_key, api_secret=api_secret)
+# Custom configuration
+config_manager = ConfigManager(env_file_path='./custom.env')
+data_manager = DataManager(
+    storage_type='local',
+    config_manager=config_manager
+)
+
+# Check available symbols and timeframes
+symbols = data_manager.get_available_symbols()
+timeframes = data_manager.get_supported_timeframes()
+
+print("Available sources and symbols:")
+for source, symbol_list in symbols.items():
+    print(f"{source}: {len(symbol_list)} symbols")
+
+# Validate requests before fetching
+if data_manager.validate_request('XAUUSD', '1h', 'bars'):
+    gold_data = data_manager.fetch_data(
+        symbol='XAUUSD',
+        start_date=start_date,
+        end_date=end_date,
+        timeframe='1h'
+    )
 ```
 
+## 📊 Supported Markets
+
+### Dukascopy Data
+- **Forex**: 30+ major and minor currency pairs
+- **Precious Metals**: Gold, Silver, Platinum, Palladium
+- **Commodities**: Oil, Coffee, Corn, Sugar, Wheat, Natural Gas
+- **Indices**: S&P 500, Dow Jones, DAX, FTSE, Nikkei
+- **Cryptocurrencies**: 18 major crypto pairs
+- **Stocks (CFDs)**: Major US and European stocks
+
+### Binance Data
+- **Cryptocurrencies**: All active trading pairs on Binance US
+- **Timeframes**: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
+
+## 🔄 Data Processing Features
+
+### Intelligent Caching
+- Automatic detection of existing data
+- Incremental updates for missing date ranges
+- Efficient storage with DuckDB backend
+
+### Tick-to-Bar Resampling
+```python
+# Framework automatically resamples tick data when beneficial
+bar_data = data_manager.fetch_data(
+    symbol='EURUSD',
+    start_date=start_date,
+    end_date=end_date,
+    timeframe='5m',  # Will resample from ticks if available
+    data_type='bars'
+)
+```
+
+### Data Validation
+- Automatic DataFrame structure validation
+- Missing data detection and handling
+- Data type consistency checks
+
+## 📁 Storage Management
+
+### View Stored Data
+```python
+# Get storage information
+info = data_manager.get_stored_info()
+print(f"Summary: {info['summary']}")
+print(f"Symbols: {info['symbols']}")
+print(f"Timeframes: {info['timeframes']}")
+```
+
+### Data Cleanup
+```python
+# Delete specific data
+data_manager.delete_data('BTCUSDT', '1h', 'bars')
+
+# Close connections
+data_manager.close()
+```
+
+## 🎮 Google Colab Integration
+
+LeviafanDL works seamlessly in Google Colab with automatic environment detection:
+
+```python
+# In Google Colab - no additional setup needed
+from leviafan_dl import DataManager
+
+# Automatically detects Colab environment and uses Colab secrets
+data_manager = DataManager()
+
+# Your data fetching code works the same way
+data = data_manager.fetch_data('EURUSD', start_date, end_date, '1h')
+```
+
+## 🛠️ Development
+
+### Project Structure
+```
+LeviafanDL/
+├── leviafan_dl/
+│   ├── __init__.py
+│   ├── sources/          # Data source implementations
+│   │   ├── base_source.py
+│   │   ├── dukascopy_source.py
+│   │   └── binance_source.py
+│   ├── storage/          # Storage backend implementations
+│   │   ├── base_storage.py
+│   │   ├── local_storage.py
+│   │   ├── gdrive_storage.py (coming soon)
+│   │   └── ftp_storage.py (coming soon)
+│   ├── core/            # Core orchestration
+│   │   ├── config_manager.py
+│   │   └── data_manager.py
+│   └── ui/              # User interfaces
+│       └── colab_interface.py
+├── examples/            # Usage examples
+├── requirements.txt
+└── setup.py
+```
+
+### Running Examples
+```bash
+# Basic usage example
+python examples/basic_usage.py
+
+# Advanced features example  
+python examples/advanced_usage.py
+```
+
+### Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🤝 Support
+
+- **Documentation**: [Coming Soon]
+- **Issues**: [GitHub Issues](https://github.com/leviafandl/LeviafanDL/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/leviafandl/LeviafanDL/discussions)
+
+## 🚧 Roadmap
+
+### Version 2.1.0
+- [ ] Google Drive storage backend
+- [ ] FTP storage backend
+- [ ] Interactive Jupyter widgets UI
+- [ ] Data export to multiple formats
+
+### Version 2.2.0
+- [ ] Additional data sources (Alpha Vantage, Yahoo Finance)
+- [ ] Real-time data streaming
+- [ ] Advanced data analysis tools
+- [ ] Performance optimizations
+
+## ⚠️ Disclaimers
+
+- **Data Usage**: Historical data is provided for research and educational purposes
+- **API Limits**: Respect rate limits of data providers
+- **Market Data**: No guarantees on data accuracy or completeness
+- **Trading**: This framework is for analysis only, not trading advice
+
 ---
 
-## Архитектура и основные классы
-
-- **BinanceUSClient** — работа с Binance US API, загрузка исторических данных.
-- **GoogleDriveDataManager** — хранение и управление данными в SQLite на Google Drive.
-- **DataDownloaderUI** — интерактивный интерфейс для Colab (выбор, загрузка, экспорт, удаление, визуализация).
-- **launch_ui()** — быстрый запуск UI в Colab.
-
----
-
-## Вызовы и методы
-
-### BinanceUSClient
-
-- `get_usdt_trading_pairs()`
-- `get_available_intervals()`
-- `get_historical_data(symbol, timeframe, start_date, end_date)`
-
-### GoogleDriveDataManager
-
-- `check_data_exists(symbol, timeframe, start_date, end_date)`
-- `get_data(symbol, timeframe, start_date, end_date)`
-- `save_data(df, symbol, timeframe)`
-- `delete_data(symbol, timeframe)`
-- `get_stored_info()`
-
-### DataDownloaderUI
-
-- `display()` — отобразить интерфейс (Colab)
-- `last_loaded_data_params` — доступ к последним загруженным данным
-
----
-
-## Экспорт и удаление данных
-
-- Экспорт выбранных данных в CSV/Parquet через UI (правый блок).
-- Удаление выбранных данных из базы через UI.
-
----
-
-## Лицензия
-
-MIT License
-
----
-
-**Binance US Data Framework** — ваш быстрый путь к анализу и автоматизации работы с историческими данными Binance US в Google Colab и Python!
+**LeviafanDL** - Making financial data access simple and unified! 🚀
